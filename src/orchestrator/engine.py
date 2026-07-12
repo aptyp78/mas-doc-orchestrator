@@ -1,4 +1,7 @@
-"""Ядро оркестратора: Agent → Reflector → Agent → ... циклы с confidence-gated эскалацией."""
+"""Ядро оркестратора: Agent → Reflector → Agent → ... циклы с confidence-gated эскалацией.
+
+Для ролевого пайплайна (7 ОРП) используй src.orchestrator.roles.dispatcher.Pipeline.
+"""
 
 import json
 import re
@@ -7,6 +10,7 @@ import time
 from src.agents.dashscope import dashscope_chat, dashscope_vision
 from src.agents.ollama_local import ollama_chat, ollama_vision
 from src.orchestrator.meta_reflector import MetaReflector, meta_reflect_cycle
+from src.orchestrator.roles.dispatcher import Pipeline  # noqa: F401 — новый ролевой пайплайн
 from src.utils.config import AGENT_VISION_MODEL, CONFIDENCE_THRESHOLD, MAX_REFLECTION_ITERATIONS, REFLECTOR_MODEL
 
 
