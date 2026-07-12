@@ -44,12 +44,16 @@ class ConvergenceDetector:
 
         # Если недостаточно данных - стагнации нет
         if len(confidences) < 2:
-            return {"is_plateau": False, "confidence_trajectory": confidences,
-                   "dominant_gap_type": None, "reason": "Недостаточно данных"}
+            return {
+                "is_plateau": False,
+                "confidence_trajectory": confidences,
+                "dominant_gap_type": None,
+                "reason": "Недостаточно данных",
+            }
 
         # Проверяем на стагнацию (delta < 0.02)
-        deltas = [confidences[i] - confidences[i-1] for i in range(1, len(confidences))]
-        is_plateau = all(abs(d) < 0.02 for d in deltas[-self.plateau_window:])
+        deltas = [confidences[i] - confidences[i - 1] for i in range(1, len(confidences))]
+        is_plateau = all(abs(d) < 0.02 for d in deltas[-self.plateau_window :])
 
         # Определяем доминирующий тип пробела
         gap_counts = Counter(reflector_outputs)
@@ -57,8 +61,7 @@ class ConvergenceDetector:
 
         reason = ""
         if is_plateau:
-            reason = (f"Confidence стагнирует на {confidences[-1]:.2f} в течение "
-                     f"{self.plateau_window} итераций")
+            reason = f"Confidence стагнирует на {confidences[-1]:.2f} в течение {self.plateau_window} итераций"
         elif len(deltas) >= 3 and deltas[-1] < 0:
             reason = "Последняя итерация не улучшила confidence"
 
@@ -66,7 +69,7 @@ class ConvergenceDetector:
             "is_plateau": is_plateau,
             "confidence_trajectory": confidences,
             "dominant_gap_type": dominant_gap,
-            "reason": reason
+            "reason": reason,
         }
 
 
@@ -78,18 +81,18 @@ class StrategyAdaptor:
             "syntax_fix": {
                 "reflector_prompt": "Фокус на синтаксис и точность формулировок",
                 "focus_prompt_template": "Исправь синтаксические ошибки: {reflection}",
-                "temperature": 0.1
+                "temperature": 0.1,
             },
             "semantic_align": {
                 "reflector_prompt": "Проверь семантическую согласованность",
                 "focus_prompt_template": "Уточни семантические связи: {reflection}",
-                "temperature": 0.2
+                "temperature": 0.2,
             },
             "structure_verification": {
                 "reflector_prompt": "Проверь структурную целостность",
                 "focus_prompt_template": "Уточни структуру результатов: {reflection}",
-                "temperature": 0.15
-            }
+                "temperature": 0.15,
+            },
         }
         self.current_strategy = "syntax_fix"
 
@@ -116,12 +119,7 @@ class StrategyAdaptor:
 class TerminationEngine:
     """Управляет условиями завершения циклов."""
 
-    def should_terminate(
-        self,
-        confidence: float,
-        convergence_result: dict,
-        max_iterations: int
-    ) -> tuple[bool, str]:
+    def should_terminate(self, confidence: float, convergence_result: dict, max_iterations: int) -> tuple[bool, str]:
         """
         Решает, нужно ли прекратить итерации.
 
@@ -148,11 +146,7 @@ class MetaReflector:
         self.strategy_adaptor = StrategyAdaptor()
         self.termination_engine = TerminationEngine()
 
-    def analyze_and_adapt(
-        self,
-        history: list[dict],
-        base_reflector_prompt: str
-    ) -> tuple[str | None, str | None]:
+    def analyze_and_adapt(self, history: list[dict], base_reflector_prompt: str) -> tuple[str | None, str | None]:
         """
         Анализирует историю и предлагает адаптацию стратегии.
 
@@ -176,9 +170,7 @@ class MetaReflector:
 
 
 def meta_reflect_cycle(
-    history: list[dict],
-    base_reflector_prompt: str,
-    max_iterations: int = 3
+    history: list[dict], base_reflector_prompt: str, max_iterations: int = 3
 ) -> tuple[bool, str, str | None]:
     """
     Попыткаmeta-рефлексии: анализ и адаптация стратегии.

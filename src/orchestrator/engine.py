@@ -128,7 +128,7 @@ class Orchestrator:
                 success, reason, new_prompt = meta_reflect_cycle(
                     self.history,
                     REFLECTOR_PROMPT.format(result=self.result, threshold=CONFIDENCE_THRESHOLD),
-                    MAX_REFLECTION_ITERATIONS
+                    MAX_REFLECTION_ITERATIONS,
                 )
                 if success:
                     print(f"  Meta-Reflector: {reason}")

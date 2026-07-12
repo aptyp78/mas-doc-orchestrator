@@ -7,12 +7,21 @@ import json
 import os
 import re
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     pass
 
+
 from src.agents.dashscope import ollama_embed
+
+
+class Section(TypedDict):
+    id: str
+    level: int
+    heading: str
+    parent: str  # ROOT or S{N}
+    line: int
 
 
 def normalize_markdown(raw_text: str) -> str:
@@ -105,11 +114,12 @@ def extract_spans(text: str) -> list[dict]:
     return spans
 
 
-def extract_sections(md_text: str) -> list[dict[str, int | str]]:
+def extract_sections(md_text: str) -> list[Section]:
     """Извлекает структуру секций из Markdown."""
-    sections: list[dict[str, int | str]] = []
+    sections: list[Section] = []
     lines = md_text.split("\n")
-    stack: list[dict[str, int | str]] = [{"id": "ROOT", "level": -1}]
+    # Use type: ignore because initial stack has int level but later dicts have str ids
+    stack: list[dict[str, str | int]] = [{"id": "ROOT", "level": -1}]  # type: ignore[misc]
 
     for i, line in enumerate(lines):
         m = re.match(r"^(#{1,6})\s+(.+)", line)
@@ -117,14 +127,14 @@ def extract_sections(md_text: str) -> list[dict[str, int | str]]:
             continue
         level = len(m.group(1))
         heading = m.group(2)
-        sid = f"S{len(sections) + 1}"
+        sid: str = f"S{len(sections) + 1}"
 
         while stack and int(stack[-1]["level"]) >= level:
             stack.pop()
-        parent = stack[-1]["id"] if stack else "ROOT"
+        parent = stack[-1]["id"] if stack else "ROOT"  # type: ignore[assignment]
 
-        sections.append({"id": sid, "level": level, "heading": heading, "parent": parent, "line": i})
-        stack.append({"id": sid, "level": level})
+        sections.append({"id": sid, "level": level, "heading": heading, "parent": parent, "line": i})  # type: ignore[misc, typeddict-item]
+        stack.append({"id": f"S{len(sections) + 1}", "level": level})  # type: ignore[list-item]
 
     return sections
 
@@ -164,7 +174,8 @@ def normalize_document(
                 break
         sec_text = "\n".join(lines_list[start_line:end_line]).strip()
         if sec_text:
-            embeddings[str(sec["id"])] = ollama_embed(sec_text, model=embed_model)[:8]
+            sid_key: str = sec["id"]
+            embeddings[sid_key] = ollama_embed(sec_text, model=embed_model)[:8]
 
     for sp in spans[:5]:
         sp_text = str(sp["text"])

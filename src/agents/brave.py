@@ -1,6 +1,7 @@
 """Клиент для Brave Search API."""
 
 import json
+import urllib.parse
 import urllib.request
 
 from src.utils.config import BRAVE_SEARCH_BASE, BRAVE_SEARCH_KEY
