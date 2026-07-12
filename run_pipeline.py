@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.orchestrator.roles.dispatcher import Pipeline
+from src.orchestrator.roles.dispatcher import EventBusPipeline
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
 
     print(f"Загрузка: {pdf_path}")
 
-    pipeline = Pipeline(pdf_path)
+    pipeline = EventBusPipeline(pdf_path)
     result = pipeline.run(verbose=True)
 
     # Сохраняем

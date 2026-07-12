@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from src.utils.config import OLLAMA_LOCAL_BASE
 
@@ -248,4 +249,141 @@ class Pipeline:
             "dispatch": dispatch,
             "history": self.history,
             "elapsed_s": round(self._elapsed(), 1),
+        }
+
+
+class EventBusPipeline(Pipeline):
+    """Параллельный пайплайн: независимые роли запускаются одновременно.
+
+    Граф зависимостей:
+    Stage 1 (parallel):  Metadata Extractor  ||  Visual Extractor
+    Stage 2 (parallel):  Semantic Disambiguator  ||  Style Validator
+    Stage 3 (sequential): Context Resolver → Graph Builder
+    Stage 4 (sequential): Dispatcher
+    """
+
+    def run(self, verbose: bool = True) -> dict:
+        from src.orchestrator.roles import (
+            context_resolver,
+            graph_builder,
+            metadata_extractor,
+            semantic_disambiguator,
+            style_validator,
+            visual_extractor,
+        )
+
+        if verbose:
+            print("=" * 60)
+            print("MAS EVENT-BUS PIPELINE: параллельные роли")
+            print("=" * 60)
+
+        # ── Stage 1: Metadata || Visual (parallel) ──
+        if verbose:
+            print("\n[Stage 1] Metadata Extractor || Visual Extractor...")
+        t0 = time.time()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            meta_future = pool.submit(metadata_extractor.run, self.pdf_path)
+            visual_future = pool.submit(visual_extractor.run, self.pdf_path, 72)
+
+            meta = meta_future.result()
+            visual = visual_future.result()
+
+        stage1_time = time.time() - t0
+        self.history.append({"role": "metadata_extractor", "output": meta})
+        self.history.append({"role": "visual_extractor", "output": visual})
+
+        if verbose:
+            print(f"  Metadata: {len(meta['metadata_map'])} атрибутов, conf={meta['extraction_confidence']}")
+            page_types = [p["page_type"] for p in visual["pages_analysis"]]
+            print(f"  Visual: {len(visual['pages_analysis'])} стр., типы: {page_types}")
+            print(f"  ⏱ Stage 1: {stage1_time:.1f}s (вместо суммы sequential)")
+
+        # ── Stage 2: Disambiguator || Validator (parallel) ──
+        if verbose:
+            print("\n[Stage 2] Semantic Disambiguator || Style Validator...")
+        t0 = time.time()
+
+        text_for_disambiguation = json.dumps(
+            {
+                "metadata": meta["metadata_map"],
+                "pages": [p.get("raw_output", "")[:500] for p in visual["pages_analysis"]],
+            },
+            ensure_ascii=False,
+        )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            disamb_future = pool.submit(semantic_disambiguator.run, text_for_disambiguation)
+            style_future = pool.submit(style_validator.run, visual.get("primitives", []))
+
+            disamb = disamb_future.result()
+            style = style_future.result()
+
+        stage2_time = time.time() - t0
+        self.history.append({"role": "semantic_disambiguator", "output": disamb})
+        self.history.append({"role": "style_validator", "output": style})
+
+        if verbose:
+            print(f"  Disambiguator: {len(disamb['resolutions'])} resolved, {len(disamb['semantic_gaps'])} gaps")
+            print(f"  Validator: compliance={style['compliance_score']}")
+            print(f"  ⏱ Stage 2: {stage2_time:.1f}s")
+
+        # ── Stage 3: Context Resolver → Graph Builder (sequential) ──
+        if verbose:
+            print("\n[Stage 3] Context Resolver → Graph Builder...")
+        t0 = time.time()
+
+        ctx = context_resolver.run(disamb.get("semantic_gaps", []))
+        self.history.append({"role": "context_resolver", "output": ctx})
+
+        graph = graph_builder.run(
+            primitives=visual.get("primitives", []),
+            resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
+            violations=style.get("violations", []),
+            spatial_cache=visual.get("spatial_cache", {}),
+        )
+        self.history.append({"role": "graph_builder", "output": graph})
+
+        stage3_time = time.time() - t0
+        if verbose:
+            print(f"  Context: {len(ctx['resolved'])} resolved, {len(ctx['external_gaps'])} external")
+            print(f"  Graph: conf={graph['overall_confidence']}")
+            print(f"  ⏱ Stage 3: {stage3_time:.1f}s")
+
+        # ── Stage 4: Dispatcher ──
+        if verbose:
+            print("\n[Stage 4] Dispatcher...")
+        metrics = {
+            "current_confidence": graph.get("overall_confidence", 0.0),
+            "gap_count": len(disamb.get("semantic_gaps", [])),
+            "external_gap_count": len(ctx.get("external_gaps", [])),
+            "elapsed_ms": int(self._elapsed() * 1000),
+            "doc_class": "mixed_text_vector",
+        }
+        dispatch = run(metrics)
+        self.history.append({"role": "dispatcher", "output": dispatch})
+
+        if verbose:
+            print(f"  Решение: {dispatch['action']}")
+            print(f"  Причина: {dispatch['reason'][:200]}")
+            print(f"\n{'=' * 60}")
+            print(f"ИТОГ: {self._elapsed():.1f}s (parallel), action={dispatch['action']}")
+            print(f"Stage 1: {stage1_time:.1f}s | Stage 2: {stage2_time:.1f}s | Stage 3: {stage3_time:.1f}s")
+            print(f"{'=' * 60}")
+
+        return {
+            "metadata": meta,
+            "visual": visual,
+            "disambiguator": disamb,
+            "context_resolver": ctx,
+            "style": style,
+            "graph": graph,
+            "dispatch": dispatch,
+            "history": self.history,
+            "elapsed_s": round(self._elapsed(), 1),
+            "stage_times": {
+                "stage1_parallel": round(stage1_time, 1),
+                "stage2_parallel": round(stage2_time, 1),
+                "stage3_sequential": round(stage3_time, 1),
+            },
         }
