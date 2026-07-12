@@ -15,7 +15,7 @@ def dashscope_chat(model: str, messages: list, max_tokens: int = 4096, temperatu
     }).encode()
     req = urllib.request.Request(
         f"{DASHSCOPE_BASE}/chat/completions", data=data,
-        headers={"Authorization": f"Bearer {DASHSCOPE_KEY}", "Content-Type": "application/json"}
+        headers={"Authorization": f"Bearer {str(DASHSCOPE_KEY)}", "Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
         d = json.loads(resp.read())
@@ -39,7 +39,7 @@ def ollama_embed(text: str, model: str = "qwen3-embedding:8b", local: bool = Tru
     base = OLLAMA_LOCAL_BASE if local else OLLAMA_CLOUD_BASE
     headers = {"Content-Type": "application/json"}
     if not local:
-        headers["Authorization"] = f"Bearer {OLLAMA_CLOUD_KEY}"
+        headers["Authorization"] = f"Bearer {str(OLLAMA_CLOUD_KEY)}"
         headers["User-Agent"] = "ollama/0.9.0 (darwin; arm64)"
 
     data = json.dumps({"model": model, "input": text}).encode()
