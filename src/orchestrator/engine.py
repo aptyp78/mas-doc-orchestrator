@@ -5,8 +5,24 @@ import re
 import time
 
 from src.agents.dashscope import dashscope_chat, dashscope_vision
+from src.agents.ollama_local import ollama_chat, ollama_vision
 from src.orchestrator.meta_reflector import MetaReflector, meta_reflect_cycle
 from src.utils.config import AGENT_VISION_MODEL, CONFIDENCE_THRESHOLD, MAX_REFLECTION_ITERATIONS, REFLECTOR_MODEL
+
+
+def _select_agent_vision(model: str):
+    """Выбирает vision-агент на основе модели."""
+    if "qwen3-vl-plus" in model or "gemma4" in model:
+        return dashscope_vision
+    return ollama_vision  # fallback to local Ollama
+
+
+def _select_reflector(model: str):
+    """Выбирает reflcctor на основе модели."""
+    if "qwen3.6-35b-a3b" in model or "coder-next" in model:
+        return dashscope_chat
+    return ollama_chat  # fallback to local Ollama
+
 
 AGENT_PROMPT = """Ты — агент структурного анализа диаграмм. Проанализируй изображение как граф знаний.
 
@@ -82,7 +98,8 @@ class Orchestrator:
             print(f"{'─' * 40}")
 
         t0 = time.time()
-        self.result, usage = dashscope_vision(AGENT_VISION_MODEL, self.image_b64, AGENT_PROMPT)
+        agent_fn = _select_agent_vision(AGENT_VISION_MODEL)
+        self.result, usage = agent_fn(AGENT_VISION_MODEL, self.image_b64, AGENT_PROMPT)
         self.history.append({"iteration": 1, "role": "agent", "content": self.result})
         if verbose:
             print(f"  Токенов: {usage.get('total_tokens', '?')}, {time.time() - t0:.1f}s")
@@ -97,7 +114,8 @@ class Orchestrator:
 
             t0 = time.time()
             reflector_prompt = REFLECTOR_PROMPT.format(result=self.result, threshold=CONFIDENCE_THRESHOLD)
-            reflection, usage = dashscope_chat(REFLECTOR_MODEL, [{"role": "user", "content": reflector_prompt}])
+            reflector_fn = _select_reflector(REFLECTOR_MODEL)
+            reflection, usage = reflector_fn(REFLECTOR_MODEL, [{"role": "user", "content": reflector_prompt}])
             self.history.append({"iteration": self.iteration, "role": "reflector", "content": reflection})
             if verbose:
                 print(f"  Токенов: {usage.get('total_tokens', '?')}, {time.time() - t0:.1f}s")
@@ -131,7 +149,8 @@ class Orchestrator:
 
             t0 = time.time()
             focus_prompt = FOCUS_PROMPT.format(reflection=reflection, result=self.result)
-            self.result, usage = dashscope_vision(AGENT_VISION_MODEL, self.image_b64, focus_prompt, max_tokens=8192)
+            agent_fn = _select_agent_vision(AGENT_VISION_MODEL)
+            self.result, usage = agent_fn(AGENT_VISION_MODEL, self.image_b64, focus_prompt, max_tokens=8192)
             self.history.append({"iteration": self.iteration, "role": "agent", "content": self.result})
             if verbose:
                 print(f"  Токенов: {usage.get('total_tokens', '?')}, {time.time() - t0:.1f}s")

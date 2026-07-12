@@ -67,8 +67,8 @@ OLLAMA_LOCAL_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 BRAVE_SEARCH_KEY = _LazyKey("BRAVE_SEARCH_API_KEY", "brave-search")
 BRAVE_SEARCH_BASE = os.environ.get("BRAVE_SEARCH_BASE_URL", "https://api.search.brave.com/res/v1")
 
-AGENT_VISION_MODEL = os.environ.get("MAS_AGENT_VISION", "qwen3-vl-plus")
-REFLECTOR_MODEL = os.environ.get("MAS_REFLECTOR", "qwen3.6-35b-a3b")
+AGENT_VISION_MODEL = os.environ.get("MAS_AGENT_VISION", "qwen3-vl:30b")  # local Ollama
+REFLECTOR_MODEL = os.environ.get("MAS_REFLECTOR", "qwen3.6:35b")  # local Ollama
 EMBEDDING_MODEL = os.environ.get("MAS_EMBEDDING", "qwen3-embedding:8b")
 
 CONFIDENCE_THRESHOLD = float(os.environ.get("MAS_CONFIDENCE_THRESHOLD", "0.85"))

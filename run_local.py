@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Запуск оркестратора на PDF-файле."""
+"""Запуск оркестратора на PDF-файле с локальной интеграцией."""
 import sys
 import base64
 import fitz
-from src.orchestrator.engine import Orchestrator
+
+# path setup
+sys.path.insert(0, 'src')
+
+from orchestrator.engine import Orchestrator
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Использование: python3 scripts/run_orchestrator.py <путь к PDF>")
+        print("Использование: python3 run_local.py <путь к PDF>")
         sys.exit(1)
 
     pdf_path = sys.argv[1]
