@@ -1,7 +1,9 @@
 smd_map:
   system_id: mas_orchestrator_pdf_knowledge_extractor
-  version: "2.0"
+  version: "2.1"
   paradigm: engestrom_activity_theory + multi_agent_systems + smd_chedrovitsky_georgy_petrovich
+  roles_specification: docs/adr/roles/
+  designed_by: qwen3.6:35b (local Ollama) + human validation
 
 activity_system:
   subject:
