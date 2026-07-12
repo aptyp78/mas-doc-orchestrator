@@ -1,137 +1,204 @@
 smd_map:
   system_id: mas_orchestrator_pdf_knowledge_extractor
-  version: "1.0"
-  paradigm: engestrom_activity_theory + multi_agent_systems
+  version: "2.0"
+  paradigm: engestrom_activity_theory + multi_agent_systems + smd_chedrovitsky_georgy_petrovich
 
 activity_system:
   subject:
-    role: c_level_user / operator
+    role: dispatcher + specialists (ORP-based)
     responsibilities:
-      - goal_setting_with_confidence_threshold
+      - orchestration_of_operational_roles
+      - SLA_control_and_fallback_routing
       - validation_and_acceptance
-      - monitoring_metrics_sla
   
   object:
     target: structured_knowledge_from_pdf
-    transformation: raw_document -> actionable_insights
+    transformation: raw_document -> actionable_insights_with_metadata
     output_formats:
       - json_ld
       - graph_schema
       - tabular
-  
+      - style_compliant_report
+
   tools:
     parser:
       name: PyMuPDF
       function: page_rasterization + text_layer_extraction
     
     agent_model:
-      name: DashScope qwen3-vl-plus
+      name: Ollama local qwen3-vl:30b
       function: vision_language_analysis_of_pages
     
     reflector_model:
-      name: Ollama local qwen3.6-35b-a3b
+      name: Ollama local qwen3.6:35b
       function: logical_verification_and_gap_detection
     
     orchestrator_framework:
-      name: custom_python_state_machine
+      name: custom_python_state_machine + ORPCoordinator
       function: coordination_and_cycle_management
-  
+    
+    metadata_parser:
+      name: pdfminer.six + pypdf
+      function: extract_doc_attributes_and_provenance
+    
+    semantic_cache:
+      name: lightweight_graph_db (in-memory)
+      function: disambiguation_and_cross_referencing
+    
+    style_validator:
+      name: rule-based_rgb_hex_analyzer
+      function: color_profile_validation_and_layout_consistency
+
   rules:
-    cycle_max_iterations: 3
-    confidence_threshold: 0.85
-    convergence_criteria: delta_confidence < 0.02 across 2 cycles
-    schema_validation: jsonschema_draft7
+    cycle_max_iterations: 2 deep + 1 heuristic fallback
+    confidence_threshold_dynamic: true
+    dynamic_threshold_by_class:
+      text_only: 0.75
+      mixed_text_vector: 0.80
+      mixed_text_image: 0.82
+      complex_diagram: 0.88
+    convergence_criteria: delta_confidence < 0.02 across 2 cycles OR max_iterations
+    schema_validation: jsonschema_draft7 + style_compliance_check
     sla_limits:
       max_tokens_per_request: 128000
       max_latency_seconds: 300
       cost_cap_usd: 2.5
     air_gap_required: true
-  
+    fallback_route: rule_based_extraction -> partial_output -> human_review
+
   community:
     team: ai_canvas_development_group
     roles:
-      - llm_architect
-      - mlops_engineer
-      - domain_expert
-      - qa_specialist
+      - llm_architect (system_design)
+      - mlops_engineer (deployment)
+      - domain_expert (validation)
+      - qa_specialist (testing)
+    methodology_responsible: "G.P. Щедровицкий — СМД методология"
     feedback_loop: weekly_prompt_calibration / monthly_model_rotation
-  
+
   division_of_labor:
-    agent_module:
+    metadata_extractor_orp:
       typical_tasks:
-        - visual_extraction
-        - entity_recognition
-        - diagram_analysis
+        - extract_doc_attributes
+        - parse_metadata_provenance
+        - fallback_marking_missing_values
       inputs:
-        - image_b64_from_pymupdf
+        - raw_pdf_file_path
       outputs:
-        - raw_analysis_text
+        - metadata_dict + missing_flags
     
-    reflector_module:
+    semantic_disambiguator_orp:
       typical_tasks:
-        - gap_detection
-        - contradiction_search
-        - question_generation
+        - resolve_abbreviations
+        - expand_acronyms
+        - cross-reference_linking
       inputs:
-        - agent_result + threshold
+        - raw_text_spans + context_cache
       outputs:
-        - reflection_text + confidence_score
+        - disambiguated_text_spans + glossary_entries
     
-    orchestrator_module:
+    style_validator_orp:
       typical_tasks:
-        - coordination
-        - metrics_monitoring
-        - state_management
+        - rgb_hex_extraction
+        - layout_pattern_analysis
+        - compliance_scoring
       inputs:
-        - internal_cycle_state
+        - svg_export + visual_regions
       outputs:
-        - final_result + trace_log
+        - style_map + compliance_score
+    
+    dispatcher_orp:
+      typical_tasks:
+        - dynamic_threshold_calculation
+        - iteration_control_with_timeout_guard
+        - fallback_route_selection
+      inputs:
+        - doc_class_classifier_output
+      outputs:
+        - optimized_workflow_config
+    
+    visual_extractor_orp:
+      typical_tasks:
+        - primitive_classification (text/vector/raster)
+        - spatial_relation_detection
+        - page_layout_analysis
+      inputs:
+        - rastered_page_image
+      outputs:
+        - primitive_map + spatial_graph
+    
+    graph_builder_orp:
+      typical_tasks:
+        - entity_linking
+        - relation_inference (contains, adjacent_to, aligned_with)
+        - orphan_node_identification
+      inputs:
+        - primitive_map + disambiguated_text
+      outputs:
+        - knowledge_graph + confidence_scores
 
 reflection_levels:
   L0:
-    name: Physical Decompoyer
+    name: Physical Decomposer
     function: PyMuPDF classification of text/vector/raster primitives
-    outputs:
-      - primitive_map_with_spatial_locations
+    output: primitive_map_with_spatial_locations
   
   L1:
-    name: Agent -> Reflector cycle
-    function: vision_analysis + logical verification iteration
-    cycles: until confidence >= 0.85 or max_iterations
+    name: Operational Roles Execution
+    function: ORP-based processing (Extract → Disambiguate → Validate → Dispatch)
+    cycles: parallel/orchestrated per workflow_config
+    output: partial_result + metadata + validation_status
   
   L2:
-    name: Meta-Reflector (to be implemented)
+    name: Meta-Reflector
     function: analyze_reflection_patterns + strategize adaptation
     components:
-      - convergence_detector
-      - strategy_adaptor
-      - termination_engine
+      - convergence_detector (confidence trajectory)
+      - strategy_adaptor (response_to_stagnation)
+      - termination_engine (SLA-aware_stop_criteria)
+  
+  L3:
+    name: Constitution Evolution
+    function: formalize_new_rols_based_on_contradictions
+    output: updated_smd_constitution
 
 contradictions:
   - type: primary
     elements:
-      - tools:agent_model
+      - tools:agent_model_quality
       - rules:max_latency_seconds
-    issue: High confidence requires deep analysis which exceeds 5min SLA on M5 Max
+    issue: High confidence requires deep analysis which exceeds SLA on M5 Max
+    resolution_status: resolved_by_division_of_labor
+    solution: Dispatcher + Specialists (parallel processing with timeout guards)
   
   - type: secondary
     elements:
       - subject:c_level_expectations
-      - tools:local_llm_quality
-    issue: C-level expects expert-level accuracy but local models may lack domain-specific knowledge
+      - tools:text_ambiguity_resolution
+    issue: C-level expects expert-level accuracy but local models lack domain-specific knowledge
+    resolution_status: resolved_by_new_orp
+    solution: Semantic Disambiguator ORP with context cache for abbreviation expansion
   
   - type: ternary
     elements:
-      - community:security_requirements
-      - rules:air_gap_required
+      - community:air_gap_required
+      - rules:cloud_model_updates
     issue: Air-gap prevents cloud-based model updates for new document types
+    resolution_status: under_development
+    solution: Context Keeper (lightweight cache) as separate layer
 
 expansionary_paths:
-  - title: Expand tools with specialized reflectors
-    description: Add L2 Meta-Reflector to detect stagnation and adapt strategy
-  
-  - title: Expand community feedback loop
-    description: Integrate C-level validation into cycle for continuous learning
-  
-  - title: Expand rules with dynamic thresholds
-    description: Adapt confidence threshold based on document complexity
+  - title: Decompose Reflector into specialized ORPs
+    description: Extract Metadata, Semantic Disambiguation, Style Validation into independentORPs with clear interfaces
+    
+  - title: Implement dynamic threshold by document class
+    description: Replace fixed confidence_threshold=0.85 with threshold(doc_class) + complexity_penalty
+    
+  - title: Replace linear cycles with dependency graph
+    description: ORPs run in parallel where possible; reflection L1/L2 goes to orchestrator without blocking deep calls
+    
+  - title: Add Stabilizer ORM layer
+    description: Structuralfidity check before state transitions (JSON-schema + required fields validation)
+    
+  - title: Implement fallback route strategy
+    description: rule_based_extraction -> partial_output_with_NEEDS_REVIEW_flag -> audit_log
