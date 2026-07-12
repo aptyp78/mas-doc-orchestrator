@@ -2,20 +2,24 @@
 
 import json
 import urllib.request
-from src.utils.config import DASHSCOPE_KEY, DASHSCOPE_BASE, OLLAMA_CLOUD_KEY, OLLAMA_CLOUD_BASE, OLLAMA_LOCAL_BASE
+
+from src.utils.config import DASHSCOPE_BASE, DASHSCOPE_KEY, OLLAMA_CLOUD_BASE, OLLAMA_CLOUD_KEY, OLLAMA_LOCAL_BASE
 
 
 def dashscope_chat(model: str, messages: list, max_tokens: int = 4096, temperature: float = 0.1) -> tuple[str, dict]:
     """Вызов DashScope OpenAI-compatible chat completions."""
-    data = json.dumps({
-        "model": model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }).encode()
+    data = json.dumps(
+        {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+    ).encode()
     req = urllib.request.Request(
-        f"{DASHSCOPE_BASE}/chat/completions", data=data,
-        headers={"Authorization": f"Bearer {str(DASHSCOPE_KEY)}", "Content-Type": "application/json"}
+        f"{DASHSCOPE_BASE}/chat/completions",
+        data=data,
+        headers={"Authorization": f"Bearer {str(DASHSCOPE_KEY)}", "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
         d = json.loads(resp.read())
@@ -24,13 +28,15 @@ def dashscope_chat(model: str, messages: list, max_tokens: int = 4096, temperatu
 
 def dashscope_vision(model: str, image_b64: str, prompt: str, max_tokens: int = 4096) -> tuple[str, dict]:
     """Vision-агент: изображение + промпт."""
-    messages = [{
-        "role": "user",
-        "content": [
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
-            {"type": "text", "text": prompt}
-        ]
-    }]
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
     return dashscope_chat(model, messages, max_tokens)
 
 

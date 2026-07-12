@@ -2,14 +2,15 @@
 
 import os
 import subprocess
-import json
 
 
 def _keychain_get(account: str) -> str | None:
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-a", account, "-s", f"{account}-api", "-w"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.stdout.strip() if result.returncode == 0 else None
     except Exception:
@@ -55,8 +56,7 @@ class _LazyKey:
 
 DASHSCOPE_KEY = _LazyKey("DASHSCOPE_API_KEY", "dashscope-modelstudio")
 DASHSCOPE_BASE = os.environ.get(
-    "DASHSCOPE_BASE_URL",
-    "https://ws-yrwako2ivay84n1p.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+    "DASHSCOPE_BASE_URL", "https://ws-yrwako2ivay84n1p.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
 )
 
 OLLAMA_CLOUD_KEY = _LazyKey("OLLAMA_CLOUD_API_KEY", "ollama-cloud")
