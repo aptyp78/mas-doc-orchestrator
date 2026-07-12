@@ -63,6 +63,10 @@ OLLAMA_CLOUD_KEY = _LazyKey("OLLAMA_CLOUD_API_KEY", "ollama-cloud")
 OLLAMA_CLOUD_BASE = "https://api.ollama.com"
 OLLAMA_LOCAL_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
+# Brave Search API
+BRAVE_SEARCH_KEY = _LazyKey("BRAVE_SEARCH_API_KEY", "brave-search")
+BRAVE_SEARCH_BASE = os.environ.get("BRAVE_SEARCH_BASE_URL", "https://api.search.brave.com/res/v1")
+
 AGENT_VISION_MODEL = os.environ.get("MAS_AGENT_VISION", "qwen3-vl-plus")
 REFLECTOR_MODEL = os.environ.get("MAS_REFLECTOR", "qwen3.6-35b-a3b")
 EMBEDDING_MODEL = os.environ.get("MAS_EMBEDDING", "qwen3-embedding:8b")

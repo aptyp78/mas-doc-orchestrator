@@ -5,6 +5,7 @@ import re
 import time
 
 from src.agents.dashscope import dashscope_chat, dashscope_vision
+from src.orchestrator.meta_reflector import MetaReflector, meta_reflect_cycle
 from src.utils.config import AGENT_VISION_MODEL, CONFIDENCE_THRESHOLD, MAX_REFLECTION_ITERATIONS, REFLECTOR_MODEL
 
 AGENT_PROMPT = """Ты — агент структурного анализа диаграмм. Проанализируй изображение как граф знаний.
@@ -70,6 +71,9 @@ class Orchestrator:
             print("MAS ОРКЕСТРАТОР С РЕФЛЕКСИЕЙ")
             print("=" * 60)
 
+        # ── Инициализация Meta-Reflector для адаптивной стратегии ──
+        self.meta_reflector = MetaReflector()
+
         # ── PASS 1: Agent ──
         self.iteration = 1
         if verbose:
@@ -100,6 +104,18 @@ class Orchestrator:
                 print(f"  Рефлексия: {reflection[:400]}...")
 
             self.confidence = _extract_confidence(reflection)
+
+            # ── Meta-Reflector check для адаптации стратегии ──
+            if i > 0 and verbose:
+                success, reason, new_prompt = meta_reflect_cycle(
+                    self.history,
+                    REFLECTOR_PROMPT.format(result=self.result, threshold=CONFIDENCE_THRESHOLD),
+                    MAX_REFLECTION_ITERATIONS
+                )
+                if success:
+                    print(f"  Meta-Reflector: {reason}")
+                    if new_prompt:
+                        reflector_prompt = new_prompt
 
             if "ГОТОВО" in reflection or self.confidence >= CONFIDENCE_THRESHOLD:
                 if verbose:

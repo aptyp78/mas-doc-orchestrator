@@ -1,0 +1,137 @@
+smd_map:
+  system_id: mas_orchestrator_pdf_knowledge_extractor
+  version: "1.0"
+  paradigm: engestrom_activity_theory + multi_agent_systems
+
+activity_system:
+  subject:
+    role: c_level_user / operator
+    responsibilities:
+      - goal_setting_with_confidence_threshold
+      - validation_and_acceptance
+      - monitoring_metrics_sla
+  
+  object:
+    target: structured_knowledge_from_pdf
+    transformation: raw_document -> actionable_insights
+    output_formats:
+      - json_ld
+      - graph_schema
+      - tabular
+  
+  tools:
+    parser:
+      name: PyMuPDF
+      function: page_rasterization + text_layer_extraction
+    
+    agent_model:
+      name: DashScope qwen3-vl-plus
+      function: vision_language_analysis_of_pages
+    
+    reflector_model:
+      name: Ollama local qwen3.6-35b-a3b
+      function: logical_verification_and_gap_detection
+    
+    orchestrator_framework:
+      name: custom_python_state_machine
+      function: coordination_and_cycle_management
+  
+  rules:
+    cycle_max_iterations: 3
+    confidence_threshold: 0.85
+    convergence_criteria: delta_confidence < 0.02 across 2 cycles
+    schema_validation: jsonschema_draft7
+    sla_limits:
+      max_tokens_per_request: 128000
+      max_latency_seconds: 300
+      cost_cap_usd: 2.5
+    air_gap_required: true
+  
+  community:
+    team: ai_canvas_development_group
+    roles:
+      - llm_architect
+      - mlops_engineer
+      - domain_expert
+      - qa_specialist
+    feedback_loop: weekly_prompt_calibration / monthly_model_rotation
+  
+  division_of_labor:
+    agent_module:
+      typical_tasks:
+        - visual_extraction
+        - entity_recognition
+        - diagram_analysis
+      inputs:
+        - image_b64_from_pymupdf
+      outputs:
+        - raw_analysis_text
+    
+    reflector_module:
+      typical_tasks:
+        - gap_detection
+        - contradiction_search
+        - question_generation
+      inputs:
+        - agent_result + threshold
+      outputs:
+        - reflection_text + confidence_score
+    
+    orchestrator_module:
+      typical_tasks:
+        - coordination
+        - metrics_monitoring
+        - state_management
+      inputs:
+        - internal_cycle_state
+      outputs:
+        - final_result + trace_log
+
+reflection_levels:
+  L0:
+    name: Physical Decompoyer
+    function: PyMuPDF classification of text/vector/raster primitives
+    outputs:
+      - primitive_map_with_spatial_locations
+  
+  L1:
+    name: Agent -> Reflector cycle
+    function: vision_analysis + logical verification iteration
+    cycles: until confidence >= 0.85 or max_iterations
+  
+  L2:
+    name: Meta-Reflector (to be implemented)
+    function: analyze_reflection_patterns + strategize adaptation
+    components:
+      - convergence_detector
+      - strategy_adaptor
+      - termination_engine
+
+contradictions:
+  - type: primary
+    elements:
+      - tools:agent_model
+      - rules:max_latency_seconds
+    issue: High confidence requires deep analysis which exceeds 5min SLA on M5 Max
+  
+  - type: secondary
+    elements:
+      - subject:c_level_expectations
+      - tools:local_llm_quality
+    issue: C-level expects expert-level accuracy but local models may lack domain-specific knowledge
+  
+  - type: ternary
+    elements:
+      - community:security_requirements
+      - rules:air_gap_required
+    issue: Air-gap prevents cloud-based model updates for new document types
+
+expansionary_paths:
+  - title: Expand tools with specialized reflectors
+    description: Add L2 Meta-Reflector to detect stagnation and adapt strategy
+  
+  - title: Expand community feedback loop
+    description: Integrate C-level validation into cycle for continuous learning
+  
+  - title: Expand rules with dynamic thresholds
+    description: Adapt confidence threshold based on document complexity
