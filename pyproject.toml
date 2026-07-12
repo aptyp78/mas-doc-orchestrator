@@ -1,0 +1,31 @@
+[project]
+name = "mas-doc-orchestrator"
+version = "0.1.0"
+description = "MAS Orchestrator with reflection cycles for zero-shot heterogeneous PDF parsing"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Arthur Ocheretny", email = "aso.veneto@gmail.com" }]
+
+dependencies = [
+    "pymupdf>=1.28",
+    "pdfplumber>=0.11",
+    "Pillow>=12.0",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

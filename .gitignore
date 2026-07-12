@@ -1,0 +1,32 @@
+# Документы проекта (data/docs/)
+
+*.pdf
+*.png
+*.jpg
+
+# Результаты прогонов (output/)
+
+output/
+!output/.gitkeep
+
+# Виртуальное окружение
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Секреты
+
+.env
+config/.env
+
+# macOS
+
+.DS_Store
+
+# IDE
+
+.vscode/
+.idea/

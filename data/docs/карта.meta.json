@@ -1,0 +1,647 @@
+{
+  "doc_id": "8c08c995",
+  "source": "карта.pdf",
+  "name": "карта",
+  "normalized_at": "2026-07-10T21:03:27",
+  "markdown_file": "карта.md",
+  "stats": {
+    "chars": 2706,
+    "sections": 15,
+    "spans": 46,
+    "numbers": 9,
+    "entities": 37
+  },
+  "sections": [
+    {
+      "id": "S1",
+      "level": 2,
+      "heading": "Онтология",
+      "parent": "ROOT",
+      "line": 3
+    },
+    {
+      "id": "S2",
+      "level": 2,
+      "heading": "Обвязка (harness)",
+      "parent": "ROOT",
+      "line": 6
+    },
+    {
+      "id": "S3",
+      "level": 2,
+      "heading": "ИИ-инфраструктура",
+      "parent": "ROOT",
+      "line": 9
+    },
+    {
+      "id": "S4",
+      "level": 2,
+      "heading": "Симуляция",
+      "parent": "ROOT",
+      "line": 32
+    },
+    {
+      "id": "S5",
+      "level": 2,
+      "heading": "Сбор данных",
+      "parent": "ROOT",
+      "line": 35
+    },
+    {
+      "id": "S6",
+      "level": 2,
+      "heading": "Интерпретация",
+      "parent": "ROOT",
+      "line": 38
+    },
+    {
+      "id": "S7",
+      "level": 2,
+      "heading": "Прогнозирование",
+      "parent": "ROOT",
+      "line": 41
+    },
+    {
+      "id": "S8",
+      "level": 2,
+      "heading": "Исполнение",
+      "parent": "ROOT",
+      "line": 44
+    },
+    {
+      "id": "S9",
+      "level": 2,
+      "heading": "Рассуждения",
+      "parent": "ROOT",
+      "line": 59
+    },
+    {
+      "id": "S10",
+      "level": 2,
+      "heading": "Создание",
+      "parent": "ROOT",
+      "line": 65
+    },
+    {
+      "id": "S11",
+      "level": 2,
+      "heading": "Безопасность",
+      "parent": "ROOT",
+      "line": 68
+    },
+    {
+      "id": "S12",
+      "level": 2,
+      "heading": "AI SDLC для ДБО",
+      "parent": "ROOT",
+      "line": 78
+    },
+    {
+      "id": "S13",
+      "level": 2,
+      "heading": "Электронный военный билет",
+      "parent": "ROOT",
+      "line": 81
+    },
+    {
+      "id": "S14",
+      "level": 2,
+      "heading": "Зарплатный проект ОПК",
+      "parent": "ROOT",
+      "line": 84
+    },
+    {
+      "id": "S15",
+      "level": 2,
+      "heading": "БАЛАНС",
+      "parent": "ROOT",
+      "line": 87
+    }
+  ],
+  "spans": [
+    {
+      "id": "SP1",
+      "text": "8 B",
+      "type": "number",
+      "char_offset": 647,
+      "char_length": 3
+    },
+    {
+      "id": "SP2",
+      "text": "6 тыс",
+      "type": "number",
+      "char_offset": 739,
+      "char_length": 5
+    },
+    {
+      "id": "SP3",
+      "text": "25 тыс",
+      "type": "number",
+      "char_offset": 751,
+      "char_length": 6
+    },
+    {
+      "id": "SP4",
+      "text": "2 тыс",
+      "type": "number",
+      "char_offset": 804,
+      "char_length": 5
+    },
+    {
+      "id": "SP5",
+      "text": "6 тыс",
+      "type": "number",
+      "char_offset": 842,
+      "char_length": 5
+    },
+    {
+      "id": "SP6",
+      "text": "2 тыс",
+      "type": "number",
+      "char_offset": 856,
+      "char_length": 5
+    },
+    {
+      "id": "SP7",
+      "text": "7 млрд",
+      "type": "number",
+      "char_offset": 1634,
+      "char_length": 6
+    },
+    {
+      "id": "SP8",
+      "text": "100%",
+      "type": "number",
+      "char_offset": 1754,
+      "char_length": 4
+    },
+    {
+      "id": "SP9",
+      "text": "400 ₽",
+      "type": "number",
+      "char_offset": 2673,
+      "char_length": 5
+    },
+    {
+      "id": "SP10",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 27,
+      "char_length": 2
+    },
+    {
+      "id": "SP11",
+      "text": "БИБ",
+      "type": "entity",
+      "char_offset": 43,
+      "char_length": 3
+    },
+    {
+      "id": "SP12",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 85,
+      "char_length": 2
+    },
+    {
+      "id": "SP13",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 208,
+      "char_length": 2
+    },
+    {
+      "id": "SP14",
+      "text": "LLM",
+      "type": "entity",
+      "char_offset": 256,
+      "char_length": 3
+    },
+    {
+      "id": "SP15",
+      "text": "GPU",
+      "type": "entity",
+      "char_offset": 262,
+      "char_length": 3
+    },
+    {
+      "id": "SP16",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 307,
+      "char_length": 2
+    },
+    {
+      "id": "SP17",
+      "text": "КБ",
+      "type": "entity",
+      "char_offset": 472,
+      "char_length": 2
+    },
+    {
+      "id": "SP18",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 501,
+      "char_length": 3
+    },
+    {
+      "id": "SP19",
+      "text": "LLM",
+      "type": "entity",
+      "char_offset": 510,
+      "char_length": 3
+    },
+    {
+      "id": "SP20",
+      "text": "DMZ",
+      "type": "entity",
+      "char_offset": 523,
+      "char_length": 3
+    },
+    {
+      "id": "SP21",
+      "text": "WAN",
+      "type": "entity",
+      "char_offset": 527,
+      "char_length": 3
+    },
+    {
+      "id": "SP22",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 581,
+      "char_length": 3
+    },
+    {
+      "id": "SP23",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 734,
+      "char_length": 3
+    },
+    {
+      "id": "SP24",
+      "text": "ЮЛ",
+      "type": "entity",
+      "char_offset": 746,
+      "char_length": 2
+    },
+    {
+      "id": "SP25",
+      "text": "ЮЛ",
+      "type": "entity",
+      "char_offset": 811,
+      "char_length": 2
+    },
+    {
+      "id": "SP26",
+      "text": "ЮЛ",
+      "type": "entity",
+      "char_offset": 849,
+      "char_length": 2
+    },
+    {
+      "id": "SP27",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 852,
+      "char_length": 3
+    },
+    {
+      "id": "SP28",
+      "text": "ЮЛ",
+      "type": "entity",
+      "char_offset": 863,
+      "char_length": 2
+    },
+    {
+      "id": "SP29",
+      "text": "ЮЛ",
+      "type": "entity",
+      "char_offset": 888,
+      "char_length": 2
+    },
+    {
+      "id": "SP30",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 913,
+      "char_length": 2
+    },
+    {
+      "id": "SP31",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 931,
+      "char_length": 3
+    },
+    {
+      "id": "SP32",
+      "text": "GPU",
+      "type": "entity",
+      "char_offset": 1601,
+      "char_length": 3
+    },
+    {
+      "id": "SP33",
+      "text": "АНО",
+      "type": "entity",
+      "char_offset": 1749,
+      "char_length": 3
+    },
+    {
+      "id": "SP34",
+      "text": "ПО",
+      "type": "entity",
+      "char_offset": 1816,
+      "char_length": 2
+    },
+    {
+      "id": "SP35",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 2231,
+      "char_length": 2
+    },
+    {
+      "id": "SP36",
+      "text": "AI",
+      "type": "entity",
+      "char_offset": 2406,
+      "char_length": 2
+    },
+    {
+      "id": "SP37",
+      "text": "SDLC",
+      "type": "entity",
+      "char_offset": 2409,
+      "char_length": 4
+    },
+    {
+      "id": "SP38",
+      "text": "ДБО",
+      "type": "entity",
+      "char_offset": 2418,
+      "char_length": 3
+    },
+    {
+      "id": "SP39",
+      "text": "ДБО",
+      "type": "entity",
+      "char_offset": 2433,
+      "char_length": 3
+    },
+    {
+      "id": "SP40",
+      "text": "ИИ",
+      "type": "entity",
+      "char_offset": 2457,
+      "char_length": 2
+    },
+    {
+      "id": "SP41",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 2574,
+      "char_length": 3
+    },
+    {
+      "id": "SP42",
+      "text": "ОПК",
+      "type": "entity",
+      "char_offset": 2600,
+      "char_length": 3
+    },
+    {
+      "id": "SP43",
+      "text": "БАЛАНС",
+      "type": "entity",
+      "char_offset": 2662,
+      "char_length": 6
+    },
+    {
+      "id": "SP44",
+      "text": "ПЕРЕВОД",
+      "type": "entity",
+      "char_offset": 2679,
+      "char_length": 7
+    },
+    {
+      "id": "SP45",
+      "text": "КАРТА",
+      "type": "entity",
+      "char_offset": 2687,
+      "char_length": 5
+    },
+    {
+      "id": "SP46",
+      "text": "ОРТ",
+      "type": "entity",
+      "char_offset": 2693,
+      "char_length": 3
+    }
+  ],
+  "embeddings": {
+    "S1": [
+      0.0146498745,
+      0.014773267,
+      -0.007801564,
+      -0.012431252,
+      0.045707606,
+      -0.020896366,
+      -0.01466206,
+      -0.011111336
+    ],
+    "S2": [
+      0.04057301,
+      -0.0053962194,
+      0.004703891,
+      -0.00505971,
+      0.013602441,
+      -0.029896779,
+      0.022514388,
+      0.0019466153
+    ],
+    "S3": [
+      0.0049184207,
+      0.0084429085,
+      -0.027885236,
+      -0.014031631,
+      0.023869613,
+      0.0028805458,
+      -0.013164509,
+      -0.00036018
+    ],
+    "S4": [
+      0.034973644,
+      0.010298214,
+      0.016368343,
+      0.011259468,
+      0.021073226,
+      0.010850829,
+      0.0034955884,
+      0.018922435
+    ],
+    "S5": [
+      0.038831312,
+      0.0059334706,
+      -0.016317734,
+      -0.0029324882,
+      0.01410411,
+      -0.007077363,
+      -0.023967119,
+      -0.008784135
+    ],
+    "S6": [
+      0.017709324,
+      0.015728448,
+      -0.02095129,
+      -0.016189085,
+      -0.0047274237,
+      0.011631227,
+      -0.009449344,
+      -0.018763306
+    ],
+    "S7": [
+      0.007016511,
+      0.018815203,
+      -0.009784446,
+      -0.016974824,
+      0.031593878,
+      0.034437664,
+      -0.0044800225,
+      -0.01774467
+    ],
+    "S8": [
+      0.012821806,
+      0.026940525,
+      0.00041512924,
+      -0.005854751,
+      0.029427001,
+      -0.012095518,
+      0.014319223,
+      -0.0061803027
+    ],
+    "S9": [
+      0.048251007,
+      -0.0014852079,
+      -0.0023143105,
+      0.010232196,
+      0.029278835,
+      0.04348402,
+      0.0087533165,
+      0.032071438
+    ],
+    "S10": [
+      0.027989078,
+      0.011978493,
+      -0.007309281,
+      0.0014291297,
+      0.028760718,
+      -0.012720818,
+      -0.008230514,
+      0.0044338214
+    ],
+    "S11": [
+      0.033340875,
+      0.021593047,
+      -0.018141726,
+      -0.0019701063,
+      0.05041505,
+      0.00094511145,
+      -0.0022930405,
+      -0.0023043533
+    ],
+    "S12": [
+      0.00844498,
+      0.010475547,
+      -0.00646045,
+      -0.036944743,
+      0.040993992,
+      -0.016401766,
+      0.0046400474,
+      0.017478596
+    ],
+    "S13": [
+      0.033559863,
+      -0.0074135954,
+      0.02184583,
+      0.010861738,
+      -0.0027247886,
+      0.024385588,
+      0.007686435,
+      0.015896164
+    ],
+    "S14": [
+      0.011462306,
+      0.00405827,
+      0.009389701,
+      0.03499051,
+      0.013245392,
+      0.027865687,
+      0.0007010126,
+      0.049449716
+    ],
+    "S15": [
+      0.049447957,
+      -0.013723282,
+      0.023074633,
+      -0.007886978,
+      -0.021825401,
+      0.005989571,
+      0.027097708,
+      -0.00985043
+    ],
+    "SP1": [
+      0.03352535,
+      0.0158518,
+      -0.013151927,
+      -0.032190364,
+      0.008027196,
+      0.009660417,
+      -0.0065915626,
+      0.0074104876
+    ],
+    "SP2": [
+      0.011096466,
+      0.001130969,
+      -0.006975327,
+      0.015499997,
+      -0.0065929247,
+      0.008935916,
+      -0.010258853,
+      0.0148580475
+    ],
+    "SP3": [
+      0.028111042,
+      0.024324229,
+      -0.017301222,
+      0.0029892055,
+      0.007838503,
+      -0.013636417,
+      0.0011927981,
+      0.026648788
+    ],
+    "SP4": [
+      0.029917013,
+      0.019822154,
+      -0.017756013,
+      0.0013751427,
+      0.014270481,
+      -0.00038186726,
+      -0.0069458173,
+      0.0072755683
+    ],
+    "SP5": [
+      0.011096466,
+      0.001130969,
+      -0.006975327,
+      0.015499997,
+      -0.0065929247,
+      0.008935916,
+      -0.010258853,
+      0.0148580475
+    ]
+  }
+}
