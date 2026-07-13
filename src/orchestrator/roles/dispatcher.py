@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src.normalizer.pdf_normalizer import normalize
 from src.orchestrator.domain_analyzer import detect_domain
+from src.orchestrator.roles import knowledge_gap_detector
 from src.utils.config import OLLAMA_LOCAL_BASE
 
 ROLE = (
@@ -31,10 +32,12 @@ PROMPT_TEMPLATE = (
     "Метрики: {metrics}\n"
     "Конфиг: {config}\n\n"
     "Выдай решение как JSON с полями:\n"
-    "- action: ITERATE | FALLBACK | TERMINATE\n"
+    "- action: ITERATE | FALLBACK | TERMINATE | ESCALATE\n"
     "- updated_thresholds: {{confidence_target, SLA_remaining_ms}}\n"
     "- routing_map: {{role_name: trigger_type}}\n"
-    "- reason: string"
+    "- reason: string\n\n"
+    "Правило KGD: если kgd_penalty > 0 — confidence_target снижается на penalty.\n"
+    "LOW-домен (+0.15) критичен, MEDIUM (+0.05) — предупреждение."
 )
 
 MODEL = "qwen3.6:35b"
@@ -53,15 +56,44 @@ def run(
     max_iterations: int = 3,
     base_sla_seconds: int = 300,
     doc_class: str = "mixed_text_vector",
+    kgd_result: dict | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.1,
 ) -> dict:
-    """Принимает решение о следующем действии."""
+    """Принимает решение о следующем действии с учётом Knowledge Gap Detection.
+
+    KGD влияет на решение:
+    - FULL_GAP → ESCALATE (не анализировать)
+    - PARTIAL_GAP → снизить confidence_target для доменов с LOW/MEDIUM
+    - PROCEED → стандартная логика
+    """
+    # KGD-aware: корректируем пороги
+    kgd_penalty = 0.0
+    kgd_flags = []
+    if kgd_result:
+        for dc in kgd_result.get("domain_checks", []):
+            if dc.get("overall_confidence") == "LOW":
+                kgd_penalty += 0.15
+                kgd_flags.append(f"LOW:{dc['domain'][:40]}")
+            elif dc.get("overall_confidence") == "MEDIUM":
+                kgd_penalty += 0.05
+                kgd_flags.append(f"MEDIUM:{dc['domain'][:40]}")
+
+        if kgd_result.get("overall_assessment") == "FULL_GAP":
+            return {
+                "action": "ESCALATE",
+                "reason": "full_knowledge_gap",
+                "kgd_flags": kgd_flags,
+                "raw_output": "",
+            }
+
     config = {
         "max_iterations": max_iterations,
         "base_SLA_seconds": base_sla_seconds,
         "class_weights": CLASS_WEIGHTS,
         "doc_class": doc_class,
+        "kgd_penalty": kgd_penalty,
+        "kgd_flags": kgd_flags,
     }
 
     prompt = PROMPT_TEMPLATE.format(
@@ -212,6 +244,18 @@ class Pipeline:
             print(f"  Glossaries: {', '.join(domain_info['glossaries_to_use'])}")
 
         # ═══════════════════════════════════════════════════════════
+        # Стадия 2.5: Knowledge Gap Detection
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 2.5: Knowledge Gap Detection ──")
+        kgd = knowledge_gap_detector.run(domain_info.get("domains", []))
+        self.history.append({"role": "knowledge_gap_detector", "output": kgd})
+        if verbose:
+            for dc in kgd.get("domain_checks", []):
+                status = "✅" if dc.get("in_model_weights") else "❌ GAP"
+                print(f"    {status} {dc['domain'][:60]}: {dc.get('gap_action', '?')}")
+
+        # ═══════════════════════════════════════════════════════════
         # Стадия 3: Анализ + Преобразование
         # ═══════════════════════════════════════════════════════════
         if verbose:
@@ -284,7 +328,7 @@ class Pipeline:
             "elapsed_ms": int(self._elapsed() * 1000),
             "doc_class": doc_class,
         }
-        dispatch = run(metrics)
+        dispatch = run(metrics, kgd_result=kgd)
         self.history.append({"role": "dispatcher", "output": dispatch})
         if verbose:
             print(f"    Решение: {dispatch['action']}")
@@ -354,6 +398,30 @@ class EventBusPipeline(Pipeline):
             print(f"  Домены: {', '.join(d['domain'] for d in domain_info.get('domains', []))}")
             print(f"  Основной: {domain_info['primary_domain']}")
             print(f"  Glossaries: {', '.join(domain_info['glossaries_to_use'])}")
+
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 2.5: Knowledge Gap Detection
+        # Проверяет: есть ли у модели знание доменов в весах?
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 2.5: Knowledge Gap Detection ──")
+        kgd = knowledge_gap_detector.run(domain_info.get("domains", []))
+        self.history.append({"role": "knowledge_gap_detector", "output": kgd})
+        if verbose:
+            print(f"  Оценка: {kgd.get('overall_assessment', '?')}")
+            for dc in kgd.get("domain_checks", []):
+                status = "✅" if dc.get("in_model_weights") else "❌ GAP"
+                print(f"    {status} {dc['domain'][:60]}: {dc.get('overall_confidence', '?')} → {dc.get('gap_action', '?')}")
+            if kgd.get("overall_assessment") == "FULL_GAP":
+                print(f"  ❌ Модель не компетентна ни в одном домене. Эскалация.")
+                return {
+                    "action": "ESCALATE",
+                    "reason": "full_knowledge_gap",
+                    "kgd": kgd,
+                    "domain": domain_info,
+                    "history": self.history,
+                    "elapsed_s": round(self._elapsed(), 1),
+                }
 
         # ═══════════════════════════════════════════════════════════
         # Стадия 3: Анализ + Преобразование (параллельный)
@@ -426,7 +494,7 @@ class EventBusPipeline(Pipeline):
             "elapsed_ms": int(self._elapsed() * 1000),
             "doc_class": doc_class,
         }
-        dispatch = run(metrics)
+        dispatch = run(metrics, kgd_result=kgd)
         self.history.append({"role": "dispatcher", "output": dispatch})
 
         if verbose:
