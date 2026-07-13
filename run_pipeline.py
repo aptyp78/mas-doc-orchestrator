@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Запуск ролевого пайплайна (7 ОРП) на PDF-файле."""
+"""Запуск 3-стадийного пайплайна на PDF-файле."""
 import json
 import os
 import sys

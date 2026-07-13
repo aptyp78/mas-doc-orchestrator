@@ -1,6 +1,9 @@
 """ОРП 4: Iteration & SLA Dispatcher.
 
-Координирует роли, управляет циклами и таймаутами.
+3-стадийная архитектура:
+  Стадия 1: Нормализация (L0) → Universal Representation
+  Стадия 2: Доменная принадлежность (SMD) → Domain-Tagged Repr.
+  Стадия 3: Анализ + Преобразование → Structured Knowledge Graph
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+from src.normalizer.pdf_normalizer import normalize
+from src.orchestrator.domain_analyzer import detect_domain
 from src.utils.config import OLLAMA_LOCAL_BASE
 
 ROLE = (
@@ -51,19 +56,7 @@ def run(
     max_tokens: int = 2048,
     temperature: float = 0.1,
 ) -> dict:
-    """Принимает решение о следующем действии.
-
-    Args:
-        system_metrics: метрики системы (confidence, deviation_pct, elapsed_ms, gap_count)
-        max_iterations: максимум итераций
-        base_sla_seconds: базовый SLA в секундах
-        doc_class: класс документа
-        max_tokens: лимит токенов
-        temperature: температура
-
-    Returns:
-        dict с action, updated_thresholds, routing_map, reason
-    """
+    """Принимает решение о следующем действии."""
     config = {
         "max_iterations": max_iterations,
         "base_SLA_seconds": base_sla_seconds,
@@ -97,7 +90,6 @@ def run(
         raw = json.loads(resp.read())
         result_text = raw["message"]["content"]
 
-    # Пытаемся распарсить JSON
     try:
         json_start = result_text.find("{")
         json_end = result_text.rfind("}") + 1
@@ -122,8 +114,57 @@ def run(
     }
 
 
+def _build_text_for_disambiguation(universal_repr: dict, max_chars: int = 3000) -> str:
+    """Строит текст для Semantic Disambiguator из Universal Representation.
+
+    Ограничивает общий объём текста, чтобы не перегружать LLM.
+    """
+    pages = universal_repr.get("pages", [])
+    page_texts = []
+    total = 0
+    for page in pages:
+        text_elements = [
+            e["content"] for e in page.get("elements", [])
+            if e["type"] in ("text", "ocr_text")
+        ]
+        if text_elements:
+            chunk = " ".join(text_elements)[:500]
+            page_texts.append(chunk)
+            total += len(chunk)
+            if total >= max_chars:
+                break
+        elif page.get("zones"):
+            zone_texts = [z.get("label", "") for z in page["zones"].get("zones", []) if "text" in z.get("type", "")]
+            if zone_texts:
+                chunk = " ".join(zone_texts)[:500]
+                page_texts.append(chunk)
+                total += len(chunk)
+                if total >= max_chars:
+                    break
+    if not page_texts:
+        page_texts = ["[Страница не содержит текста]"]
+    return json.dumps({"pages": page_texts}, ensure_ascii=False)
+
+
+def _extract_primitives_for_graph(universal_repr: dict, max_primitives: int = 30) -> list[dict]:
+    """Извлекает примитивы из Universal Representation для Graph Builder.
+
+    Ограничивает количество примитивов, чтобы не перегружать LLM.
+    """
+    primitives = []
+    for page in universal_repr.get("pages", []):
+        for elem in page.get("elements", []):
+            primitives.append({
+                "type": elem["type"],
+                "bbox": elem["bbox"],
+                "content": (elem.get("content", "") or "")[:200],  # обрезаем
+                "page_id": page["page_id"],
+            })
+    return primitives[:max_primitives]
+
+
 class Pipeline:
-    """Координирует выполнение ролей в правильном порядке."""
+    """3-стадийный пайплайн: Нормализация → Домен → Анализ."""
 
     def __init__(self, pdf_path: str):
         self.pdf_path = pdf_path
@@ -134,105 +175,120 @@ class Pipeline:
         return time.time() - self.start_time
 
     def run(self, verbose: bool = True) -> dict:
-        """Запускает полный пайплайн: все 7 ролей + диспетчер."""
         from src.orchestrator.roles import (
             context_resolver,
             graph_builder,
             metadata_extractor,
             semantic_disambiguator,
             style_validator,
-            visual_extractor,
         )
 
         if verbose:
             print("=" * 60)
-            print("MAS PIPELINE: 7 ролей + Dispatcher")
+            print("MAS PIPELINE: 3 стадии (Нормализация → Домен → Анализ)")
             print("=" * 60)
 
-        # Шаг 1: Metadata
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 1: Нормализация (L0) → Universal Representation
+        # ═══════════════════════════════════════════════════════════
         if verbose:
-            print("\n[1/6] Metadata Extractor...")
+            print("\n── Стадия 1: Нормализация ──")
+        universal = normalize(self.pdf_path)
+        self.history.append({"role": "normalizer", "output": universal})
+        if verbose:
+            stats = universal["stats"]
+            print(f"  Страниц: {stats['total_pages']}, типы: {stats['page_types']}")
+
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 2: Доменная принадлежность (SMD)
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 2: Доменная принадлежность (SMD) ──")
+        domain_info = detect_domain(universal)
+        self.history.append({"role": "domain_analyzer", "output": domain_info})
+        if verbose:
+            print(f"  Домены: {', '.join(d['domain'] for d in domain_info.get('domains', []))}")
+            print(f"  Основной: {domain_info['primary_domain']}")
+            print(f"  Glossaries: {', '.join(domain_info['glossaries_to_use'])}")
+
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 3: Анализ + Преобразование
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 3: Анализ + Преобразование ──")
+
+        # Metadata Extractor (работает на сыром PDF — не зависит от Universal Repr)
+        if verbose:
+            print("\n  [3a] Metadata Extractor...")
         meta = metadata_extractor.run(self.pdf_path)
         self.history.append({"role": "metadata_extractor", "output": meta})
         if verbose:
-            print(
-                f"  Атрибутов: {len(meta['metadata_map'])}, "
-                f"пропущено: {len(meta['missing_fields'])}, "
-                f"confidence: {meta['extraction_confidence']}"
-            )
+            print(f"    Атрибутов: {len(meta['metadata_map'])}, conf={meta['extraction_confidence']}")
 
-        # Шаг 2: Visual Extractor (можно параллельно с Metadata)
+        # Semantic Disambiguator (работает на Universal Repr)
         if verbose:
-            print("\n[2/6] Visual Extractor...")
-        visual = visual_extractor.run(self.pdf_path, dpi=72)
-        self.history.append({"role": "visual_extractor", "output": visual})
-        if verbose:
-            page_types = [p["page_type"] for p in visual["pages_analysis"]]
-            print(f"  Страниц: {len(visual['pages_analysis'])}, типы: {page_types}")
-
-        # Шаг 3: Semantic Disambiguator
-        if verbose:
-            print("\n[3/6] Semantic Disambiguator...")
-        text_for_disambiguation = json.dumps(
-            {
-                "metadata": meta["metadata_map"],
-                "pages": [p.get("raw_output", "")[:500] for p in visual["pages_analysis"]],
-            },
-            ensure_ascii=False,
-        )
+            print("\n  [3b] Semantic Disambiguator...")
+        text_for_disambiguation = _build_text_for_disambiguation(universal)
         disamb = semantic_disambiguator.run(text_for_disambiguation)
         self.history.append({"role": "semantic_disambiguator", "output": disamb})
         if verbose:
-            print(f"  Разрешено: {len(disamb['resolutions'])}, gap: {len(disamb['semantic_gaps'])}")
+            print(f"    Разрешено: {len(disamb['resolutions'])}, gap: {len(disamb['semantic_gaps'])}")
 
-        # Шаг 4: Context Resolver
+        # Context Resolver (с доменным контекстом)
         if verbose:
-            print("\n[4/6] Context Resolver...")
-        ctx = context_resolver.run(disamb.get("semantic_gaps", []))
+            print("\n  [3c] Context Resolver...")
+        domain = domain_info.get("primary_domain")
+        ctx = context_resolver.run(disamb.get("semantic_gaps", []), domain=domain if domain else None, context=text_for_disambiguation)
         self.history.append({"role": "context_resolver", "output": ctx})
         if verbose:
-            print(f"  Разрешено через глоссарий: {len(ctx['resolved'])}, external gaps: {len(ctx['external_gaps'])}")
+            print(f"    Разрешено: {len(ctx['resolved'])}, external: {len(ctx['external_gaps'])}")
 
-        # Шаг 5: Style Validator
+        # Style Validator
         if verbose:
-            print("\n[5/6] Style Validator...")
-        style = style_validator.run(visual.get("primitives", []))
+            print("\n  [3d] Style Validator...")
+        style = style_validator.run([])
         self.history.append({"role": "style_validator", "output": style})
         if verbose:
-            print(f"  Compliance: {style['compliance_score']}")
+            print(f"    Compliance: {style['compliance_score']}")
 
-        # Шаг 6: Graph Builder
+        # Graph Builder (работает на Universal Repr)
         if verbose:
-            print("\n[6/6] Graph Builder...")
+            print("\n  [3e] Graph Builder...")
         graph = graph_builder.run(
-            primitives=visual.get("primitives", []),
+            primitives=_extract_primitives_for_graph(universal),
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
-            spatial_cache=visual.get("spatial_cache", {}),
+            spatial_cache={},
         )
         self.history.append({"role": "graph_builder", "output": graph})
         if verbose:
-            print(
-                f"  Узлов: {len(graph['graph_structure'].get('nodes', []))}, "
-                f"связей: {len(graph['graph_structure'].get('edges', []))}, "
-                f"confidence: {graph['overall_confidence']}"
-            )
+            nodes = len(graph['graph_structure'].get('nodes', []))
+            edges = len(graph['graph_structure'].get('edges', []))
+            print(f"    Узлов: {nodes}, связей: {edges}, conf={graph['overall_confidence']}")
 
-        # Шаг 7: Dispatcher — решение
+        # Dispatcher — решение
         if verbose:
-            print("\n[Dispatcher] Принятие решения...")
+            print("\n  [3f] Dispatcher...")
+        # Определяем doc_class из типов страниц
+        page_types = universal["stats"]["page_types"]
+        doc_class = "text_only"
+        if page_types.get("mixed", 0) > 0:
+            doc_class = "mixed_text_image"
+        elif page_types.get("image-only", 0) > 0 and page_types.get("text-only", 0) > 0:
+            doc_class = "mixed_text_image"
+
         metrics = {
             "current_confidence": graph.get("overall_confidence", 0.0),
             "gap_count": len(disamb.get("semantic_gaps", [])),
             "external_gap_count": len(ctx.get("external_gaps", [])),
             "elapsed_ms": int(self._elapsed() * 1000),
-            "doc_class": "mixed_text_vector",
+            "doc_class": doc_class,
         }
         dispatch = run(metrics)
         self.history.append({"role": "dispatcher", "output": dispatch})
         if verbose:
-            print(f"  Решение: {dispatch['action']}")
-            print(f"  Причина: {dispatch['reason'][:200]}")
+            print(f"    Решение: {dispatch['action']}")
+            print(f"    Причина: {dispatch['reason'][:200]}")
 
         if verbose:
             print(f"\n{'=' * 60}")
@@ -240,8 +296,9 @@ class Pipeline:
             print(f"{'=' * 60}")
 
         return {
+            "universal": universal,
+            "domain": domain_info,
             "metadata": meta,
-            "visual": visual,
             "disambiguator": disamb,
             "context_resolver": ctx,
             "style": style,
@@ -253,13 +310,12 @@ class Pipeline:
 
 
 class EventBusPipeline(Pipeline):
-    """Параллельный пайплайн: независимые роли запускаются одновременно.
+    """Параллельный пайплайн: 3 стадии с параллельными ролями в Стадии 3.
 
-    Граф зависимостей:
-    Stage 1 (parallel):  Metadata Extractor  ||  Visual Extractor
-    Stage 2 (parallel):  Semantic Disambiguator  ||  Style Validator
-    Stage 3 (sequential): Context Resolver → Graph Builder
-    Stage 4 (sequential): Dispatcher
+    Стадия 1: Нормализация (L0)
+    Стадия 2: Доменная принадлежность (SMD)
+    Стадия 3: Анализ (parallel: Metadata + Disambiguator || Style Validator →
+            Context Resolver → Graph Builder → Dispatcher)
     """
 
     def run(self, verbose: bool = True) -> dict:
@@ -269,111 +325,122 @@ class EventBusPipeline(Pipeline):
             metadata_extractor,
             semantic_disambiguator,
             style_validator,
-            visual_extractor,
         )
 
         if verbose:
             print("=" * 60)
-            print("MAS EVENT-BUS PIPELINE: параллельные роли")
+            print("MAS EVENT-BUS PIPELINE: 3 стадии (Нормализация → Домен → Анализ)")
             print("=" * 60)
 
-        # ── Stage 1: Metadata || Visual (parallel) ──
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 1: Нормализация (L0) → Universal Representation
+        # ═══════════════════════════════════════════════════════════
         if verbose:
-            print("\n[Stage 1] Metadata Extractor || Visual Extractor...")
+            print("\n── Стадия 1: Нормализация ──")
+        universal = normalize(self.pdf_path)
+        self.history.append({"role": "normalizer", "output": universal})
+        if verbose:
+            stats = universal["stats"]
+            print(f"  Страниц: {stats['total_pages']}, типы: {stats['page_types']}")
+
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 2: Доменная принадлежность (SMD)
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 2: Доменная принадлежность (SMD) ──")
+        domain_info = detect_domain(universal)
+        self.history.append({"role": "domain_analyzer", "output": domain_info})
+        if verbose:
+            print(f"  Домены: {', '.join(d['domain'] for d in domain_info.get('domains', []))}")
+            print(f"  Основной: {domain_info['primary_domain']}")
+            print(f"  Glossaries: {', '.join(domain_info['glossaries_to_use'])}")
+
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 3: Анализ + Преобразование (параллельный)
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 3: Анализ + Преобразование ──")
+
+        # Stage 3a: Metadata Extractor || Semantic Disambiguator (parallel)
+        if verbose:
+            print("\n  [Stage 3a] Metadata || Disambiguator...")
         t0 = time.time()
+
+        text_for_disambiguation = _build_text_for_disambiguation(universal)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             meta_future = pool.submit(metadata_extractor.run, self.pdf_path)
-            visual_future = pool.submit(visual_extractor.run, self.pdf_path, 72)
-
-            meta = meta_future.result()
-            visual = visual_future.result()
-
-        stage1_time = time.time() - t0
-        self.history.append({"role": "metadata_extractor", "output": meta})
-        self.history.append({"role": "visual_extractor", "output": visual})
-
-        if verbose:
-            print(f"  Metadata: {len(meta['metadata_map'])} атрибутов, conf={meta['extraction_confidence']}")
-            page_types = [p["page_type"] for p in visual["pages_analysis"]]
-            print(f"  Visual: {len(visual['pages_analysis'])} стр., типы: {page_types}")
-            print(f"  ⏱ Stage 1: {stage1_time:.1f}s (вместо суммы sequential)")
-
-        # ── Stage 2: Disambiguator || Validator (parallel) ──
-        if verbose:
-            print("\n[Stage 2] Semantic Disambiguator || Style Validator...")
-        t0 = time.time()
-
-        text_for_disambiguation = json.dumps(
-            {
-                "metadata": meta["metadata_map"],
-                "pages": [p.get("raw_output", "")[:500] for p in visual["pages_analysis"]],
-            },
-            ensure_ascii=False,
-        )
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
             disamb_future = pool.submit(semantic_disambiguator.run, text_for_disambiguation)
-            style_future = pool.submit(style_validator.run, visual.get("primitives", []))
-
+            meta = meta_future.result()
             disamb = disamb_future.result()
-            style = style_future.result()
 
-        stage2_time = time.time() - t0
+        stage3a_time = time.time() - t0
+        self.history.append({"role": "metadata_extractor", "output": meta})
         self.history.append({"role": "semantic_disambiguator", "output": disamb})
-        self.history.append({"role": "style_validator", "output": style})
-
         if verbose:
-            print(f"  Disambiguator: {len(disamb['resolutions'])} resolved, {len(disamb['semantic_gaps'])} gaps")
-            print(f"  Validator: compliance={style['compliance_score']}")
-            print(f"  ⏱ Stage 2: {stage2_time:.1f}s")
+            print(f"    Metadata: {len(meta['metadata_map'])} атрибутов, conf={meta['extraction_confidence']}")
+            print(f"    Disambiguator: {len(disamb['resolutions'])} resolved, {len(disamb['semantic_gaps'])} gaps")
+            print(f"    ⏱ Stage 3a: {stage3a_time:.1f}s")
 
-        # ── Stage 3: Context Resolver → Graph Builder (sequential) ──
+        # Stage 3b: Context Resolver → Graph Builder (sequential)
         if verbose:
-            print("\n[Stage 3] Context Resolver → Graph Builder...")
+            print("\n  [Stage 3b] Context Resolver → Graph Builder...")
         t0 = time.time()
 
-        ctx = context_resolver.run(disamb.get("semantic_gaps", []))
+        domain = domain_info.get("primary_domain")
+        ctx = context_resolver.run(disamb.get("semantic_gaps", []), domain=domain if domain else None, context=text_for_disambiguation)
         self.history.append({"role": "context_resolver", "output": ctx})
 
+        style = style_validator.run([])
+        self.history.append({"role": "style_validator", "output": style})
+
         graph = graph_builder.run(
-            primitives=visual.get("primitives", []),
+            primitives=_extract_primitives_for_graph(universal),
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
-            spatial_cache=visual.get("spatial_cache", {}),
+            spatial_cache={},
         )
         self.history.append({"role": "graph_builder", "output": graph})
 
-        stage3_time = time.time() - t0
+        stage3b_time = time.time() - t0
         if verbose:
-            print(f"  Context: {len(ctx['resolved'])} resolved, {len(ctx['external_gaps'])} external")
-            print(f"  Graph: conf={graph['overall_confidence']}")
-            print(f"  ⏱ Stage 3: {stage3_time:.1f}s")
+            print(f"    Context: {len(ctx['resolved'])} resolved, {len(ctx['external_gaps'])} external")
+            print(f"    Graph: conf={graph['overall_confidence']}")
+            print(f"    ⏱ Stage 3b: {stage3b_time:.1f}s")
 
-        # ── Stage 4: Dispatcher ──
+        # Stage 3c: Dispatcher
         if verbose:
-            print("\n[Stage 4] Dispatcher...")
+            print("\n  [Stage 3c] Dispatcher...")
+
+        page_types = universal["stats"]["page_types"]
+        doc_class = "text_only"
+        if page_types.get("mixed", 0) > 0:
+            doc_class = "mixed_text_image"
+        elif page_types.get("image-only", 0) > 0 and page_types.get("text-only", 0) > 0:
+            doc_class = "mixed_text_image"
+
         metrics = {
             "current_confidence": graph.get("overall_confidence", 0.0),
             "gap_count": len(disamb.get("semantic_gaps", [])),
             "external_gap_count": len(ctx.get("external_gaps", [])),
             "elapsed_ms": int(self._elapsed() * 1000),
-            "doc_class": "mixed_text_vector",
+            "doc_class": doc_class,
         }
         dispatch = run(metrics)
         self.history.append({"role": "dispatcher", "output": dispatch})
 
         if verbose:
-            print(f"  Решение: {dispatch['action']}")
-            print(f"  Причина: {dispatch['reason'][:200]}")
+            print(f"    Решение: {dispatch['action']}")
+            print(f"    Причина: {dispatch['reason'][:200]}")
             print(f"\n{'=' * 60}")
-            print(f"ИТОГ: {self._elapsed():.1f}s (parallel), action={dispatch['action']}")
-            print(f"Stage 1: {stage1_time:.1f}s | Stage 2: {stage2_time:.1f}s | Stage 3: {stage3_time:.1f}s")
+            print(f"ИТОГ: {self._elapsed():.1f}s, action={dispatch['action']}")
+            print(f"Stage 3a: {stage3a_time:.1f}s | Stage 3b: {stage3b_time:.1f}s")
             print(f"{'=' * 60}")
 
         return {
+            "universal": universal,
+            "domain": domain_info,
             "metadata": meta,
-            "visual": visual,
             "disambiguator": disamb,
             "context_resolver": ctx,
             "style": style,
@@ -382,8 +449,7 @@ class EventBusPipeline(Pipeline):
             "history": self.history,
             "elapsed_s": round(self._elapsed(), 1),
             "stage_times": {
-                "stage1_parallel": round(stage1_time, 1),
-                "stage2_parallel": round(stage2_time, 1),
-                "stage3_sequential": round(stage3_time, 1),
+                "stage3a_parallel": round(stage3a_time, 1),
+                "stage3b_sequential": round(stage3b_time, 1),
             },
         }
