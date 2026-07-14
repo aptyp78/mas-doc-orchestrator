@@ -90,8 +90,19 @@ def run(
         json_end = result_text.rfind("}") + 1
         if json_start >= 0 and json_end > json_start:
             parsed = json.loads(result_text[json_start:json_end])
+            gs = parsed.get("graph_structure", {"nodes": [], "edges": []})
+            # Нормализация: content → label если label отсутствует
+            for node in gs.get("nodes", []):
+                if "label" not in node and "content" in node:
+                    node["label"] = node["content"]
+            # Нормализация рёбер: source_id → source, target_id → target
+            for edge in gs.get("edges", []):
+                if "source" not in edge and "source_id" in edge:
+                    edge["source"] = edge["source_id"]
+                if "target" not in edge and "target_id" in edge:
+                    edge["target"] = edge["target_id"]
             return {
-                "graph_structure": parsed.get("graph_structure", {"nodes": [], "edges": []}),
+                "graph_structure": gs,
                 "groups": parsed.get("groups", []),
                 "orphans": parsed.get("orphans", []),
                 "overall_confidence": parsed.get("overall_confidence", 0.5),

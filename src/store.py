@@ -186,7 +186,7 @@ class VectorGraphStore:
     # ═══════════════════════════════════════════════════════════
 
     def embed(self, text: str) -> list[float]:
-        """Получает эмбеддинг через qwen3-embedding:8b."""
+        """Получает эмбеддинг через qwen3-embedding:8b с retry."""
         import urllib.request
 
         data = json.dumps({
@@ -194,14 +194,21 @@ class VectorGraphStore:
             "prompt": text,
         }).encode()
 
-        req = urllib.request.Request(
-            f"{OLLAMA_BASE}/api/embeddings",
-            data=data, headers={"Content-Type": "application/json"},
-        )
+        last_error = None
+        for attempt in range(3):
+            try:
+                req = urllib.request.Request(
+                    f"{OLLAMA_BASE}/api/embeddings",
+                    data=data, headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    raw = json.loads(resp.read())
+                    return raw["embedding"]
+            except Exception as e:
+                last_error = e
+                time.sleep(1.0 * (attempt + 1))
 
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = json.loads(resp.read())
-            return raw["embedding"]
+        raise last_error or RuntimeError("embedding failed after 3 retries")
 
     # ═══════════════════════════════════════════════════════════
     # Search

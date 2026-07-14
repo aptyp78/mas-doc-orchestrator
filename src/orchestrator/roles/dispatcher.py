@@ -513,25 +513,23 @@ class EventBusPipeline(Pipeline):
             from src.store import VectorGraphStore
             contour = domain_info.get("primary_domain", "default")[:50]
             store = VectorGraphStore(contour=contour)
+            embed_failures = 0
 
             for node in graph.get("graph_structure", {}).get("nodes", []):
+                embedding = None
                 try:
                     embedding = store.embed(node.get("label", ""))
-                    store.add_node(
-                        label=node.get("label", ""),
-                        node_type=node.get("type", "entity"),
-                        properties={"source_doc": self.pdf_path, "confidence": "HIGH"},
-                        embedding=embedding,
-                    )
-                except Exception:
-                    store.add_node(
-                        label=node.get("label", ""),
-                        node_type=node.get("type", "entity"),
-                        properties={"source_doc": self.pdf_path},
-                    )
+                except Exception as e:
+                    embed_failures += 1
+
+                store.add_node(
+                    label=node.get("label", ""),
+                    node_type=node.get("type", "entity"),
+                    properties={"source_doc": self.pdf_path, "confidence": "HIGH"},
+                    embedding=embedding,
+                )
 
             for edge in graph.get("graph_structure", {}).get("edges", []):
-                # Упрощённо: ищем узлы по label
                 store.add_edge(
                     source_id=edge.get("source", ""),
                     target_id=edge.get("target", ""),
@@ -542,6 +540,21 @@ class EventBusPipeline(Pipeline):
             store_result = store.stats()
             if verbose:
                 print(f"\n  💾 Сохранено: {store_result['node_count']} узлов, {store_result['edge_count']} рёбер в контур '{contour}'")
+                if embed_failures:
+                    print(f"  ⚠️ Эмбеддингов не сохранено: {embed_failures}/{store_result['node_count']}")
+
+            # Проверка качества графа
+            gs = graph.get("graph_structure", {})
+            nodes = gs.get("nodes", [])
+            edges = gs.get("edges", [])
+            orphans = [n for n in nodes if not any(
+                e.get("source") == n.get("id") or e.get("target") == n.get("id")
+                for e in edges
+            )]
+            if verbose:
+                print(f"  🔍 Качество графа: {len(orphans)} orphan-узлов из {len(nodes)}, связность={len(edges)/max(len(nodes),1):.1f}")
+                if orphans:
+                    print(f"     Orphans: {', '.join(o.get('id','?')[:20] for o in orphans[:5])}")
         except Exception as e:
             store_result = {"error": str(e)}
 
