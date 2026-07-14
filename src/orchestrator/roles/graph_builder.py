@@ -40,28 +40,32 @@ def run(
     resolutions: list[dict] | None = None,
     violations: list[dict] | None = None,
     spatial_cache: dict | None = None,
-    max_tokens: int = 4096,
+    max_tokens: int = 2048,
+    max_prompt_chars: int = 4000,
     temperature: float = 0.1,
 ) -> dict:
     """Строит граф связей между блоками.
 
     Args:
-        primitives: примитивы от Visual Extractor
-        resolutions: разрешения от Semantic Disambiguator
-        violations: нарушения от Style Validator
+        primitives: примитивы (ограничены max_prompt_chars)
+        resolutions: разрешения
+        violations: нарушения
         spatial_cache: пространственный кэш
-        max_tokens: лимит токенов
+        max_tokens: лимит токенов ответа
+        max_prompt_chars: макс. размер промпта
         temperature: температура
-
-    Returns:
-        dict с graph_structure, groups, orphans, overall_confidence
     """
+    primitives_str = json.dumps(primitives or [], ensure_ascii=False)[:max_prompt_chars // 2]
+    resolutions_str = json.dumps(resolutions or [], ensure_ascii=False)[:max_prompt_chars // 4]
+    violations_str = json.dumps(violations or [], ensure_ascii=False)[:max_prompt_chars // 8]
+    spatial_str = json.dumps(spatial_cache or {}, ensure_ascii=False)[:max_prompt_chars // 8]
+
     prompt = PROMPT_TEMPLATE.format(
         role=ROLE,
-        primitives=json.dumps(primitives or [], ensure_ascii=False),
-        resolutions=json.dumps(resolutions or [], ensure_ascii=False),
-        violations=json.dumps(violations or [], ensure_ascii=False),
-        spatial_cache=json.dumps(spatial_cache or {}, ensure_ascii=False),
+        primitives=primitives_str,
+        resolutions=resolutions_str,
+        violations=violations_str,
+        spatial_cache=spatial_str,
     )
 
     data = json.dumps(
@@ -95,12 +99,14 @@ def run(
             for node in gs.get("nodes", []):
                 if "label" not in node and "content" in node:
                     node["label"] = node["content"]
-            # Нормализация рёбер: source_id → source, target_id → target
+            # Нормализация рёбер: from→source, to→target, relation→type
             for edge in gs.get("edges", []):
-                if "source" not in edge and "source_id" in edge:
-                    edge["source"] = edge["source_id"]
-                if "target" not in edge and "target_id" in edge:
-                    edge["target"] = edge["target_id"]
+                if "source" not in edge:
+                    edge["source"] = edge.get("from", edge.get("source_id", ""))
+                if "target" not in edge:
+                    edge["target"] = edge.get("to", edge.get("target_id", ""))
+                if "type" not in edge:
+                    edge["type"] = edge.get("relation", edge.get("edge_type", "references"))
             return {
                 "graph_structure": gs,
                 "groups": parsed.get("groups", []),

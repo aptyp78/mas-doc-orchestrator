@@ -112,15 +112,30 @@ def run(
         }
     ).encode()
 
-    req = urllib.request.Request(
-        f"{OLLAMA_LOCAL_BASE}/api/chat",
-        data=data,
-        headers={"Content-Type": "application/json"},
-    )
+    # LLM-вызов с таймаутом и fallback
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA_LOCAL_BASE}/api/chat",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = json.loads(resp.read())
+            result_text = raw["message"]["content"]
+    except Exception:
+        # Детерминированный fallback: решение по метрикам без LLM
+        conf = system_metrics.get("current_confidence", 0.5)
+        gaps = system_metrics.get("external_gap_count", 0)
+        elapsed = system_metrics.get("elapsed_ms", 0)
+        sla_ms = base_sla_seconds * 1000
 
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        raw = json.loads(resp.read())
-        result_text = raw["message"]["content"]
+        if elapsed > sla_ms:
+            return {"action": "TERMINATE", "reason": "SLA exceeded (fallback)", "updated_thresholds": {}, "routing_map": {}, "raw_output": ""}
+        if gaps == 0:
+            return {"action": "TERMINATE", "reason": "no gaps (fallback)", "updated_thresholds": {}, "routing_map": {}, "raw_output": ""}
+        if conf > 0.85:
+            return {"action": "TERMINATE", "reason": f"high confidence {conf} (fallback)", "updated_thresholds": {}, "routing_map": {}, "raw_output": ""}
+        return {"action": "FALLBACK", "reason": "LLM timeout (fallback)", "updated_thresholds": {}, "routing_map": {}, "raw_output": ""}
 
     try:
         json_start = result_text.find("{")
@@ -531,9 +546,9 @@ class EventBusPipeline(Pipeline):
 
             for edge in graph.get("graph_structure", {}).get("edges", []):
                 store.add_edge(
-                    source_id=edge.get("source", ""),
-                    target_id=edge.get("target", ""),
-                    edge_type=edge.get("type", "references"),
+                    source_id=edge.get("source", edge.get("from", "")),
+                    target_id=edge.get("target", edge.get("to", "")),
+                    edge_type=edge.get("type", edge.get("relation", "references")),
                 )
 
             store.save()
@@ -548,7 +563,7 @@ class EventBusPipeline(Pipeline):
             nodes = gs.get("nodes", [])
             edges = gs.get("edges", [])
             orphans = [n for n in nodes if not any(
-                e.get("source") == n.get("id") or e.get("target") == n.get("id")
+                e.get("source", e.get("from", "")) == n.get("id") or e.get("target", e.get("to", "")) == n.get("id")
                 for e in edges
             )]
             if verbose:
