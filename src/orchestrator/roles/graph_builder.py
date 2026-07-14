@@ -21,16 +21,17 @@ ROLE = (
 
 PROMPT_TEMPLATE = (
     "{role}\n\n"
-    "Документ: {document_context}\n"
-    "Разрешения: {resolutions}\n"
-    "Нарушения: {violations}\n\n"
-    "Построй СЕМАНТИЧЕСКИЙ граф документа:\n"
-    "- nodes: ключевые сущности, концепты, субъекты, объекты, термины\n"
-    "- edges: смысловые связи между ними\n"
-    "- groups: тематические группы узлов\n"
-    "- orphans: узлы без связей (с причиной)\n\n"
+    "Примитивы (с номерами страниц): {primitives}\n"
+    "Разрешения терминов: {resolutions}\n"
+    "Нарушения: {violations}\n"
+    "Доменный контекст: {document_context}\n\n"
+    "Построй граф знаний документа:\n"
+    "- nodes: каждый узел ДОЛЖЕН иметь source_page (номер страницы из примитива)\n"
+    "- edges: смысловые связи между узлами\n"
+    "- groups: тематические группы\n"
+    "- orphans: узлы без связей\n\n"
     "Выдай JSON:\n"
-    "- graph_structure: {{nodes: [{{id, label, type}}], edges: [{{from, to, relation}}]}}\n"
+    "- graph_structure: {{nodes: [{{id, label, type, source_page}}], edges: [{{from, to, relation}}]}}\n"
     "- groups: [{{group_id, member_ids, theme}}]\n"
     "- orphans: [{{id, reason}}]\n"
     "- overall_confidence: float"
@@ -45,33 +46,36 @@ def run(
     violations: list[dict] | None = None,
     spatial_cache: dict | None = None,
     max_tokens: int = 2048,
+    max_primitives: int = 40,
     temperature: float = 0.1,
 ) -> dict:
-    """Строит семантический граф документа.
+    """Строит граф знаний с provenance (source_page).
 
     Args:
-        primitives: не используется (оставлен для совместимости)
+        primitives: примитивы с source_page
         resolutions: разрешения терминов
         violations: нарушения стиля
-        spatial_cache: доменный контекст {domain, domains, subject, object, text_snippet, kgd_assessment}
+        spatial_cache: доменный контекст {domain, subject, object, kgd_assessment}
         max_tokens: лимит токенов
+        max_primitives: макс. число примитивов
         temperature: температура
     """
     ctx = spatial_cache or {}
+    primitives_str = json.dumps((primitives or [])[:max_primitives], ensure_ascii=False)
     doc_context = json.dumps({
         "domain": ctx.get("domain", ""),
         "domains": ctx.get("domains", []),
         "subject": ctx.get("subject", ""),
         "object": ctx.get("object", ""),
-        "text": ctx.get("text_snippet", "")[:2000],
         "kgd": ctx.get("kgd_assessment", "PROCEED"),
     }, ensure_ascii=False)
 
     prompt = PROMPT_TEMPLATE.format(
         role=ROLE,
-        document_context=doc_context,
-        resolutions=json.dumps(resolutions or [], ensure_ascii=False)[:2000],
+        primitives=primitives_str,
+        resolutions=json.dumps(resolutions or [], ensure_ascii=False)[:1500],
         violations=json.dumps(violations or [], ensure_ascii=False)[:500],
+        document_context=doc_context,
     )
 
     data = json.dumps(

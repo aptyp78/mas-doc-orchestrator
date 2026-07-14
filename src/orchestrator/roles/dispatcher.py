@@ -194,19 +194,25 @@ def _build_text_for_disambiguation(universal_repr: dict, max_chars: int = 3000) 
 
 
 def _extract_primitives_for_graph(universal_repr: dict, max_primitives: int = 30) -> list[dict]:
-    """Извлекает примитивы из Universal Representation для Graph Builder.
+    """Извлекает примитивы с page provenance — семплинг по всем страницам."""
+    pages = universal_repr.get("pages", [])
+    if not pages:
+        return []
 
-    Ограничивает количество примитивов, чтобы не перегружать LLM.
-    """
+    # Равномерный семплинг: по одному примитиву с каждой страницы
     primitives = []
-    for page in universal_repr.get("pages", []):
-        for elem in page.get("elements", []):
-            primitives.append({
-                "type": elem["type"],
-                "bbox": elem["bbox"],
-                "content": (elem.get("content", "") or "")[:200],  # обрезаем
-                "page_id": page["page_id"],
-            })
+    per_page = max(1, max_primitives // max(len(pages), 1))
+    for page in pages:
+        for elem in page.get("elements", [])[:per_page]:
+            content = (elem.get("content", "") or "")[:150]
+            if content.strip():
+                primitives.append({
+                    "type": elem["type"],
+                    "content": content,
+                    "source_page": page["page_id"],
+                })
+        if len(primitives) >= max_primitives:
+            break
     return primitives[:max_primitives]
 
 
@@ -314,7 +320,7 @@ class Pipeline:
         if verbose:
             print("\n  [3e] Graph Builder...")
         graph = graph_builder.run(
-            primitives=[],
+            primitives=_extract_primitives_for_graph(universal),
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
             spatial_cache={
@@ -322,7 +328,6 @@ class Pipeline:
                 "domains": [d["domain"] for d in domain_info.get("domains", [])],
                 "subject": domain_info.get("subject", ""),
                 "object": domain_info.get("object", ""),
-                "text_snippet": text_for_disambiguation[:2000],
                 "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
             },
         )
@@ -485,7 +490,7 @@ class EventBusPipeline(Pipeline):
         self.history.append({"role": "style_validator", "output": style})
 
         graph = graph_builder.run(
-            primitives=[],
+            primitives=_extract_primitives_for_graph(universal),
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
             spatial_cache={
@@ -493,7 +498,6 @@ class EventBusPipeline(Pipeline):
                 "domains": [d["domain"] for d in domain_info.get("domains", [])],
                 "subject": domain_info.get("subject", ""),
                 "object": domain_info.get("object", ""),
-                "text_snippet": text_for_disambiguation[:2000],
                 "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
             },
         )
