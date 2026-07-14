@@ -142,31 +142,116 @@ def _call_image_content_extractor(page: fitz.Page, dpi: int = 150) -> dict:
 
 
 def _call_tesseract_ocr(page: fitz.Page, dpi: int = 300) -> dict:
-    """Извлекает текст из изображения через Tesseract OCR (детерминированно)."""
+    """Извлекает текст из изображения через Tesseract OCR с per-word confidence."""
     pix = page.get_pixmap(dpi=dpi)
-    
+
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         pix.save(tmp.name)
         tmp_path = tmp.name
-    
+
     try:
+        # TSV формат для per-word confidence
         result = subprocess.run(
-            ["tesseract", tmp_path, "stdout", "-l", "rus+eng", "--psm", "6"],
+            ["tesseract", tmp_path, "stdout", "-l", "rus+eng", "--psm", "6", "tsv"],
             capture_output=True, text=True, timeout=120,
         )
-        text = result.stdout.strip()
+        lines = result.stdout.strip().split("\n")
+
+        # Извлекаем текст и confidence
+        words = []
+        confs = []
+        for line in lines[1:]:  # пропускаем заголовок
+            parts = line.split("\t")
+            if len(parts) >= 12:
+                try:
+                    conf = float(parts[10])
+                    text = parts[11].strip()
+                    if conf > 0 and text:
+                        words.append(text)
+                        confs.append(conf)
+                except ValueError:
+                    pass
+
+        text = " ".join(words)
+        avg_conf = sum(confs) / len(confs) if confs else 0.0
     finally:
         import os
         os.unlink(tmp_path)
-    
-    has_text = len(text) > 10  # минимум 10 символов для признания текстом
+
     return {
-        "has_text": has_text,
+        "has_text": len(text) > 10,
         "extracted_text": text,
-        "content_type": "ocr_result",
-        "description": "",
+        "word_count": len(words),
+        "avg_confidence": round(avg_conf, 1),
         "source": "tesseract",
     }
+
+
+def _tesseract_quality(result: dict) -> str:
+    """Оценивает качество Tesseract OCR. Возвращает 'OK' или 'FAIL'."""
+    text = result.get("extracted_text", "")
+    avg_conf = result.get("avg_confidence", 0)
+    word_count = result.get("word_count", 0)
+
+    if not text or len(text.strip()) < 10:
+        return "FAIL"
+    if avg_conf < 50:
+        return "FAIL"
+    if word_count < 5:
+        return "FAIL"
+
+    # Мусорные паттерны: повторяющиеся не-буквенные символы, длинные цифры, верхний регистр
+    import re
+    garbled = len(re.findall(r'[^\w\s]{3,}|\d{5,}|[A-Z]{4,}', text))
+    if garbled / max(word_count, 1) > 0.1:
+        return "FAIL"
+
+    return "OK"
+
+
+def _call_cloud_vision(page: fitz.Page, dpi: int = 150) -> dict:
+    """Извлекает текст из изображения через DashScope qwen3-vl-plus."""
+    pix = page.get_pixmap(dpi=dpi)
+    img_b64 = base64.b64encode(pix.tobytes("png")).decode()
+
+    api_key = _get_cloud_key()
+    if not api_key:
+        return {"has_text": False, "extracted_text": "", "source": "cloud_error", "error": "no_api_key"}
+
+    data = json.dumps({
+        "model": "qwen3-vl-plus",
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+            {"type": "text", "text": "Извлеки весь текст с этого изображения дословно. Только текст, без описания."},
+        ]}],
+        "max_tokens": 1024,
+        "temperature": 0.1,
+    }).encode()
+
+    endpoint = "https://ws-yrwako2ivay84n1p.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+    req = urllib.request.Request(endpoint, data=data,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = json.loads(resp.read())
+            text = raw["choices"][0]["message"]["content"]
+        return {"has_text": len(text) > 10, "extracted_text": text, "source": "cloud_vision"}
+    except Exception as e:
+        return {"has_text": False, "extracted_text": "", "source": "cloud_error", "error": str(e)}
+
+
+def _get_cloud_key() -> str:
+    """Получает ключ DashScope из keychain."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-a", "dashscope-modelstudio", "-w"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
 
 
 def _call_zone_separator(page: fitz.Page, dpi: int = 150) -> dict:
@@ -277,24 +362,32 @@ def normalize(pdf_path: str, dpi: int = 150, separate_zones: bool = False) -> di
         if page_type == "mixed" and separate_zones:
             zones = _call_zone_separator(page, dpi=dpi)
 
-        # 5. Для image-only страниц — извлечение текста из картинки
+        # 5. Для image-only страниц: Tesseract-first → quality → Cloud
         image_content = None
         if page_type == "image-only":
-            # Сначала пробуем vision model
-            image_content = _call_image_content_extractor(page, dpi=dpi)
-            
-            # Если vision model не нашла текст — пробуем Tesseract
-            if not image_content.get("has_text"):
-                ocr_result = _call_tesseract_ocr(page)
-                if ocr_result.get("has_text"):
-                    image_content = ocr_result
-            
+            # Шаг 1: Tesseract OCR (быстро)
+            ocr_result = _call_tesseract_ocr(page)
+            quality = _tesseract_quality(ocr_result)
+
+            if quality == "OK":
+                image_content = ocr_result
+            else:
+                # Шаг 2: Cloud vision (если Tesseract FAIL)
+                cloud_result = _call_cloud_vision(page)
+                if cloud_result.get("has_text"):
+                    image_content = cloud_result
+                else:
+                    # Шаг 3: Local vision (последний fallback)
+                    image_content = _call_image_content_extractor(page, dpi=dpi)
+                    if not image_content.get("has_text"):
+                        image_content = ocr_result
+
             if image_content.get("has_text") and image_content.get("extracted_text"):
                 elements.append({
                     "type": "ocr_text",
                     "bbox": [0, 0, int(page.rect.width), int(page.rect.height)],
                     "content": image_content["extracted_text"],
-                    "source": image_content.get("source", "vision_model"),
+                    "source": image_content.get("source", "tesseract"),
                 })
                 page_type = "image-with-text"
 
