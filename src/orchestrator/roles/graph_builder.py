@@ -21,12 +21,16 @@ ROLE = (
 
 PROMPT_TEMPLATE = (
     "{role}\n\n"
-    "Примитивы: {primitives}\n"
+    "Документ: {document_context}\n"
     "Разрешения: {resolutions}\n"
-    "Нарушения: {violations}\n"
-    "Пространственный кэш: {spatial_cache}\n\n"
-    "Выдай результат как JSON с полями:\n"
-    "- graph_structure: {{nodes: [], edges: []}}\n"
+    "Нарушения: {violations}\n\n"
+    "Построй СЕМАНТИЧЕСКИЙ граф документа:\n"
+    "- nodes: ключевые сущности, концепты, субъекты, объекты, термины\n"
+    "- edges: смысловые связи между ними\n"
+    "- groups: тематические группы узлов\n"
+    "- orphans: узлы без связей (с причиной)\n\n"
+    "Выдай JSON:\n"
+    "- graph_structure: {{nodes: [{{id, label, type}}], edges: [{{from, to, relation}}]}}\n"
     "- groups: [{{group_id, member_ids, theme}}]\n"
     "- orphans: [{{id, reason}}]\n"
     "- overall_confidence: float"
@@ -41,31 +45,33 @@ def run(
     violations: list[dict] | None = None,
     spatial_cache: dict | None = None,
     max_tokens: int = 2048,
-    max_prompt_chars: int = 4000,
     temperature: float = 0.1,
 ) -> dict:
-    """Строит граф связей между блоками.
+    """Строит семантический граф документа.
 
     Args:
-        primitives: примитивы (ограничены max_prompt_chars)
-        resolutions: разрешения
-        violations: нарушения
-        spatial_cache: пространственный кэш
-        max_tokens: лимит токенов ответа
-        max_prompt_chars: макс. размер промпта
+        primitives: не используется (оставлен для совместимости)
+        resolutions: разрешения терминов
+        violations: нарушения стиля
+        spatial_cache: доменный контекст {domain, domains, subject, object, text_snippet, kgd_assessment}
+        max_tokens: лимит токенов
         temperature: температура
     """
-    primitives_str = json.dumps(primitives or [], ensure_ascii=False)[:max_prompt_chars // 2]
-    resolutions_str = json.dumps(resolutions or [], ensure_ascii=False)[:max_prompt_chars // 4]
-    violations_str = json.dumps(violations or [], ensure_ascii=False)[:max_prompt_chars // 8]
-    spatial_str = json.dumps(spatial_cache or {}, ensure_ascii=False)[:max_prompt_chars // 8]
+    ctx = spatial_cache or {}
+    doc_context = json.dumps({
+        "domain": ctx.get("domain", ""),
+        "domains": ctx.get("domains", []),
+        "subject": ctx.get("subject", ""),
+        "object": ctx.get("object", ""),
+        "text": ctx.get("text_snippet", "")[:2000],
+        "kgd": ctx.get("kgd_assessment", "PROCEED"),
+    }, ensure_ascii=False)
 
     prompt = PROMPT_TEMPLATE.format(
         role=ROLE,
-        primitives=primitives_str,
-        resolutions=resolutions_str,
-        violations=violations_str,
-        spatial_cache=spatial_str,
+        document_context=doc_context,
+        resolutions=json.dumps(resolutions or [], ensure_ascii=False)[:2000],
+        violations=json.dumps(violations or [], ensure_ascii=False)[:500],
     )
 
     data = json.dumps(

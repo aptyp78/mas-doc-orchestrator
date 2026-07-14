@@ -314,10 +314,17 @@ class Pipeline:
         if verbose:
             print("\n  [3e] Graph Builder...")
         graph = graph_builder.run(
-            primitives=_extract_primitives_for_graph(universal),
+            primitives=[],
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
-            spatial_cache={},
+            spatial_cache={
+                "domain": domain_info.get("primary_domain", ""),
+                "domains": [d["domain"] for d in domain_info.get("domains", [])],
+                "subject": domain_info.get("subject", ""),
+                "object": domain_info.get("object", ""),
+                "text_snippet": text_for_disambiguation[:2000],
+                "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
+            },
         )
         self.history.append({"role": "graph_builder", "output": graph})
         if verbose:
@@ -478,10 +485,17 @@ class EventBusPipeline(Pipeline):
         self.history.append({"role": "style_validator", "output": style})
 
         graph = graph_builder.run(
-            primitives=_extract_primitives_for_graph(universal),
+            primitives=[],
             resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
             violations=style.get("violations", []),
-            spatial_cache={},
+            spatial_cache={
+                "domain": domain_info.get("primary_domain", ""),
+                "domains": [d["domain"] for d in domain_info.get("domains", [])],
+                "subject": domain_info.get("subject", ""),
+                "object": domain_info.get("object", ""),
+                "text_snippet": text_for_disambiguation[:2000],
+                "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
+            },
         )
         self.history.append({"role": "graph_builder", "output": graph})
 
