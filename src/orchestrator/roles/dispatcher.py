@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src.normalizer.pdf_normalizer import normalize
 from src.orchestrator.domain_analyzer import detect_domain
-from src.orchestrator.roles import knowledge_gap_detector
+from src.orchestrator.roles import graph_builder, knowledge_gap_detector
 from src.utils.config import OLLAMA_LOCAL_BASE
 
 ROLE = (
@@ -193,27 +193,43 @@ def _build_text_for_disambiguation(universal_repr: dict, max_chars: int = 3000) 
     return json.dumps({"pages": page_texts}, ensure_ascii=False)
 
 
-def _extract_primitives_for_graph(universal_repr: dict, max_primitives: int = 30) -> list[dict]:
-    """Извлекает примитивы с page provenance — семплинг по всем страницам."""
+def _build_graph_all_pages(
+    universal_repr: dict,
+    resolutions: list[dict],
+    violations: list[dict],
+    domain_info: dict,
+    kgd: dict,
+) -> dict:
+    """Строит граф по всем страницам — один вызов, все примитивы."""
     pages = universal_repr.get("pages", [])
     if not pages:
-        return []
+        return graph_builder.run([], resolutions, violations, {}, max_tokens=1024)
 
-    # Равномерный семплинг: по одному примитиву с каждой страницы
-    primitives = []
-    per_page = max(1, max_primitives // max(len(pages), 1))
+    # По 1 примитиву с каждой страницы — все 81
+    all_primitives = []
     for page in pages:
-        for elem in page.get("elements", [])[:per_page]:
-            content = (elem.get("content", "") or "")[:150]
+        for elem in page.get("elements", [])[:1]:
+            content = (elem.get("content", "") or "")[:100]
             if content.strip():
-                primitives.append({
+                all_primitives.append({
                     "type": elem["type"],
                     "content": content,
                     "source_page": page["page_id"],
                 })
-        if len(primitives) >= max_primitives:
-            break
-    return primitives[:max_primitives]
+
+    return graph_builder.run(
+        primitives=all_primitives,
+        resolutions=resolutions,
+        violations=violations,
+        spatial_cache={
+            "domain": domain_info.get("primary_domain", ""),
+            "subject": domain_info.get("subject", ""),
+            "object": domain_info.get("object", ""),
+            "kgd": kgd.get("overall_assessment", "PROCEED"),
+        },
+        max_tokens=4096,
+        max_primitives=len(all_primitives),
+    )
 
 
 class Pipeline:
@@ -319,17 +335,9 @@ class Pipeline:
         # Graph Builder (работает на Universal Repr)
         if verbose:
             print("\n  [3e] Graph Builder...")
-        graph = graph_builder.run(
-            primitives=_extract_primitives_for_graph(universal),
-            resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
-            violations=style.get("violations", []),
-            spatial_cache={
-                "domain": domain_info.get("primary_domain", ""),
-                "domains": [d["domain"] for d in domain_info.get("domains", [])],
-                "subject": domain_info.get("subject", ""),
-                "object": domain_info.get("object", ""),
-                "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
-            },
+        graph = _build_graph_all_pages(
+            universal, disamb.get("resolutions", []) + ctx.get("resolved", []),
+            style.get("violations", []), domain_info, kgd,
         )
         self.history.append({"role": "graph_builder", "output": graph})
         if verbose:
@@ -489,17 +497,9 @@ class EventBusPipeline(Pipeline):
         style = style_validator.run([])
         self.history.append({"role": "style_validator", "output": style})
 
-        graph = graph_builder.run(
-            primitives=_extract_primitives_for_graph(universal),
-            resolutions=disamb.get("resolutions", []) + ctx.get("resolved", []),
-            violations=style.get("violations", []),
-            spatial_cache={
-                "domain": domain_info.get("primary_domain", ""),
-                "domains": [d["domain"] for d in domain_info.get("domains", [])],
-                "subject": domain_info.get("subject", ""),
-                "object": domain_info.get("object", ""),
-                "kgd_assessment": kgd.get("overall_assessment", "PROCEED"),
-            },
+        graph = _build_graph_all_pages(
+            universal, disamb.get("resolutions", []) + ctx.get("resolved", []),
+            style.get("violations", []), domain_info, kgd,
         )
         self.history.append({"role": "graph_builder", "output": graph})
 
