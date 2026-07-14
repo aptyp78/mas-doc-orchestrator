@@ -505,6 +505,46 @@ class EventBusPipeline(Pipeline):
             print(f"Stage 3a: {stage3a_time:.1f}s | Stage 3b: {stage3b_time:.1f}s")
             print(f"{'=' * 60}")
 
+        # ═══════════════════════════════════════════════════════════
+        # Сохранение в векторно-графовое хранилище
+        # ═══════════════════════════════════════════════════════════
+        store_result = None
+        try:
+            from src.store import VectorGraphStore
+            contour = domain_info.get("primary_domain", "default")[:50]
+            store = VectorGraphStore(contour=contour)
+
+            for node in graph.get("graph_structure", {}).get("nodes", []):
+                try:
+                    embedding = store.embed(node.get("label", ""))
+                    store.add_node(
+                        label=node.get("label", ""),
+                        node_type=node.get("type", "entity"),
+                        properties={"source_doc": self.pdf_path, "confidence": "HIGH"},
+                        embedding=embedding,
+                    )
+                except Exception:
+                    store.add_node(
+                        label=node.get("label", ""),
+                        node_type=node.get("type", "entity"),
+                        properties={"source_doc": self.pdf_path},
+                    )
+
+            for edge in graph.get("graph_structure", {}).get("edges", []):
+                # Упрощённо: ищем узлы по label
+                store.add_edge(
+                    source_id=edge.get("source", ""),
+                    target_id=edge.get("target", ""),
+                    edge_type=edge.get("type", "references"),
+                )
+
+            store.save()
+            store_result = store.stats()
+            if verbose:
+                print(f"\n  💾 Сохранено: {store_result['node_count']} узлов, {store_result['edge_count']} рёбер в контур '{contour}'")
+        except Exception as e:
+            store_result = {"error": str(e)}
+
         return {
             "universal": universal,
             "domain": domain_info,
@@ -514,6 +554,7 @@ class EventBusPipeline(Pipeline):
             "style": style,
             "graph": graph,
             "dispatch": dispatch,
+            "store": store_result,
             "history": self.history,
             "elapsed_s": round(self._elapsed(), 1),
             "stage_times": {
