@@ -1,0 +1,105 @@
+{
+  "pages": [
+    {
+      "page_id": 1,
+      "primary_form": "discursive",
+      "confidence": "HIGH",
+      "secondary_forms": []
+    },
+    {
+      "page_id": 2,
+      "primary_form": "enumeration",
+      "confidence": "HIGH",
+      "secondary_forms": []
+    },
+    {
+      "page_id": 3,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "discursive",
+        "dynamics"
+      ]
+    },
+    {
+      "page_id": 4,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "matrix"
+      ]
+    },
+    {
+      "page_id": 5,
+      "primary_form": "hierarchy",
+      "confidence": "HIGH",
+      "secondary_forms": []
+    },
+    {
+      "page_id": 6,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "matrix",
+        "dynamics"
+      ]
+    },
+    {
+      "page_id": 7,
+      "primary_form": "matrix",
+      "confidence": "HIGH",
+      "secondary_forms": []
+    },
+    {
+      "page_id": 8,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "spatial"
+      ]
+    },
+    {
+      "page_id": 9,
+      "primary_form": "topology",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "enumeration",
+        "matrix"
+      ]
+    },
+    {
+      "page_id": 10,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "spatial",
+        "matrix"
+      ]
+    },
+    {
+      "page_id": 11,
+      "primary_form": "mixed",
+      "confidence": "HIGH",
+      "secondary_forms": [
+        "dynamics"
+      ]
+    },
+    {
+      "page_id": 12,
+      "primary_form": "matrix",
+      "confidence": "HIGH",
+      "secondary_forms": []
+    }
+  ],
+  "stats": {
+    "total": 12,
+    "form_distribution": {
+      "mixed": 6,
+      "matrix": 2,
+      "discursive": 1,
+      "enumeration": 1,
+      "hierarchy": 1,
+      "topology": 1
+    }
+  }
+}
