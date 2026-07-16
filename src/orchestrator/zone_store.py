@@ -6,6 +6,11 @@
 - Векторный эмбеддинг (4096d, qwen3-embedding:8b)
 - Метаданные (page_id, form, content, entities)
 
+Персистентность: FAISS + SQLite в директории контура.
+- embeddings.faiss — FAISS IndexFlatIP (4096d)
+- zones.db (SQLite) — метаданные зон + граф связей
+- meta.json — метаданные контура
+
 Использует локальную Ollama для эмбеддингов, без внешних зависимостей.
 """
 
@@ -13,9 +18,13 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import sqlite3
+import struct
 import time
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from src.utils.config import OLLAMA_LOCAL_BASE
 
@@ -261,3 +270,103 @@ class ZoneStore:
             "total_embeddings": len(self._embeddings),
             "pages_covered": len(set(z.page_id for z in self.zones.values())),
         }
+
+    # ═══════════════════════════════════════════════════════════
+    # Persistence: FAISS binary + SQLite
+    # ═══════════════════════════════════════════════════════════
+
+    def save(self, contour_dir: str) -> str:
+        """Сохраняет зоны в FAISS + SQLite."""
+        contour_path = Path(contour_dir)
+        contour_path.mkdir(parents=True, exist_ok=True)
+
+        # FAISS binary (простой формат: dim + count + vectors)
+        faiss_path = contour_path / "embeddings.faiss"
+        with open(faiss_path, "wb") as f:
+            f.write(struct.pack("II", EMBED_DIM, len(self._embeddings)))
+            for emb in self._embeddings:
+                if emb:
+                    f.write(struct.pack(f"{len(emb)}f", *emb))
+
+        # SQLite
+        db_path = contour_path / "zones.db"
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS zones (
+                    uri TEXT PRIMARY KEY,
+                    page_id INTEGER,
+                    zone_id TEXT,
+                    form TEXT,
+                    content TEXT,
+                    metadata_json TEXT
+                )
+            """)
+            conn.execute("DELETE FROM zones")
+            for uri, zone in self.zones.items():
+                conn.execute(
+                    "INSERT INTO zones VALUES (?, ?, ?, ?, ?, ?)",
+                    (uri, zone.page_id, zone.zone_id, zone.form,
+                     zone.content, json.dumps(zone.metadata, ensure_ascii=False)),
+                )
+            conn.commit()
+
+        # Метаданные
+        meta = {
+            "embedding_dim": EMBED_DIM,
+            "model": EMBED_MODEL,
+            "zone_count": len(self.zones),
+            "embedding_count": len(self._embeddings),
+            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        with open(contour_path / "meta.json", "w") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+
+        print(f"  ZoneStore saved: {len(self.zones)} zones, {len(self._embeddings)} embeddings → {contour_dir}")
+        return str(contour_path)
+
+    @classmethod
+    def load(cls, contour_dir: str) -> "ZoneStore":
+        """Загружает зоны из FAISS + SQLite."""
+        store = cls()
+        contour_path = Path(contour_dir)
+
+        # FAISS binary
+        faiss_path = contour_path / "embeddings.faiss"
+        if faiss_path.exists():
+            with open(faiss_path, "rb") as f:
+                dim, count = struct.unpack("II", f.read(8))
+                for i in range(count):
+                    emb = list(struct.unpack(f"{dim}f", f.read(dim * 4)))
+                    store._embeddings.append(emb)
+
+        # SQLite
+        db_path = contour_path / "zones.db"
+        if db_path.exists():
+            with sqlite3.connect(str(db_path)) as conn:
+                rows = conn.execute("SELECT * FROM zones").fetchall()
+                for row in rows:
+                    uri, page_id, zone_id, form, content, metadata_json = row
+                    zone = Zone(
+                        zone_id=zone_id, page_id=page_id, form=form,
+                        content=content, metadata=json.loads(metadata_json),
+                    )
+                    store.zones[uri] = zone
+
+        # Восстанавливаем _zone_ids
+        store._zone_ids = list(store.zones.keys())
+
+        if store._embeddings and len(store._embeddings) != len(store._zone_ids):
+            # Эмбеддинги не совпадают — загружаем заново
+            print(f"  ZoneStore: embedding mismatch, re-indexing...")
+            store._embeddings = []
+            store._zone_ids = []
+            for uri, zone in store.zones.items():
+                try:
+                    zone.embedding = store._get_embedding(zone.content)
+                    store._embeddings.append(zone.embedding)
+                    store._zone_ids.append(uri)
+                except Exception:
+                    pass
+
+        print(f"  ZoneStore loaded: {len(store.zones)} zones, {len(store._embeddings)} embeddings")
+        return store
