@@ -21,65 +21,180 @@
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Dispatcher                           │
-│            (qwen3.6:35b — dynamic threshold)            │
-└─────────────────────────────────────────────────────────┘
-        ▲              ▲              ▲              ▲
-        │              │              │              │
-┌───────┴────┐  ┌──────┴──────┐  ┌───┴───────┐  ┌──┴──────────┐
-│  Metadata  │  │   Visual    │  │   Style   │  │  Semantic   │
-│ Extractor  │  │ Extractor   │  │ Validator │  │Disambiguator│
-│ (PyMuPDF)  │  │(qwen3-vl:30b)│  │(rule-based)│  │(qwen3.6:35b)│
-└────────────┘  └─────────────┘  └───────────┘  └──────┬───────┘
-                                                       │
-                                              ┌────────┴────────┐
-                                              │    Context      │
-                                              │    Resolver     │
-                                              │ (local glossary)│
-                                              └────────┬────────┘
-                                                       │
-                                              ┌────────┴────────┐
-                                              │     Graph       │
-                                              │    Builder      │
-                                              │ (qwen3.6:35b)   │
-                                              └─────────────────┘
+                   ┌──────────────────────────────┐
+                   │     C-level Manager           │
+                   │  «Какие риски? Почему X?»     │
+                   └──────────────┬───────────────┘
+                                  │
+                   ┌──────────────┴───────────────┐
+                   │      Qwen Code Agent          │
+                   │   (ask_orchestrator.py)        │
+                   └──────────────┬───────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          │                       │                       │
+          ▼                       ▼                       ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│ 4-Level Pipeline │   │  SMD Core (FSM) │   │   Data Layer    │
+│  (semiotic/)     │   │  (orchestrator/)│   │  (output/run_*/)│
+└─────────────────┘   └─────────────────┘   └─────────────────┘
 
-Stage 1 (parallel):  Metadata Extractor ‖ Visual Extractor
-Stage 2 (parallel):  Semantic Disambiguator ‖ Style Validator
-Stage 3 (sequential): Context Resolver → Graph Builder
-Stage 4 (sequential): Dispatcher → ITERATE | FALLBACK | TERMINATE
+Pipeline (semiotic/):
+  L1: classifier.py        → 7 SMD sign forms
+  L2: extractors.py        → schema extraction
+  L3: ontology.py          → domain ontology
+  L4: reflector.py         → C-level recommendations
+
+Orchestrator (orchestrator/):
+  provenance.py            → SHA-256 traceability chain
+  htr_loop.py              → Hypothesis-Test-Revisit cycle
+  cross_page_synthesizer.py → Cross-page semantic graph
+  doubt_gate.py            → Confidence gate + unknown zones
+  dialogue_mediator.py     → Advocate/Skeptic/Synthesizer
+  smd_core.py              → FSM: Exploration→Synthesis→Doubt→Dialogue→Verification
+
+Data Layer:
+  output/run_*/01_semiotic_classification.json
+  output/run_*/03_schemas.json                    (529 KB)
+  output/run_*/07_recommendations.json            (18 recs)
+  output/run_*/08_dashboard.html
 ```
+
+## Orchestration Modes (FSM)
+
+```
+Exploration → Synthesis → Doubt → Dialogue → Verification → Complete
+     │            │          │         │            │
+     │            │          │         │            └─ Provenance trace
+     │            │          │         └─ Multi-position argumentation
+     │            │          └─ Block LOW-confidence, map unknowns
+     │            └─ Cross-page graph, clusters, leverage points
+     └─ HTR cycle: generate hypotheses → verify → revise
+```
+
+**Transitions:**
+- LOW confidence → Doubt → Dialogue (автоматически)
+- Contradiction found → Doubt → revisit
+- All clear → Verification → Complete
+- User asks «почему?» → Provenance trace
+- User asks «а что если?» → Exploration (HTR)
 
 ## Module Map
 
 ```
 src/
+├── semiotic/
+│   ├── classifier.py           # L1: SMD sign form classification
+│   ├── cloud_classifier.py     # L1: Cloud (DashScope) classifier
+│   ├── extractors.py           # L2: Schema extractors (venn, hierarchy, matrix, etc.)
+│   ├── ontology.py             # L3: Domain ontology mapper
+│   ├── cloud_ontology.py       # L3: Cloud ontology mapper
+│   ├── reflector.py            # L4: C-level pragmatic reflector
+│   ├── cloud_reflector.py      # L4: Cloud reflector
+│   └── mixed_decomposer.py     # P2: Mixed page decomposition
 ├── orchestrator/
-│   ├── engine.py              # Старый Orchestrator (Agent→Reflector→Agent)
-│   ├── meta_reflector.py      # ConvergenceDetector, StrategyAdaptor
-│   └── roles/                 # НОВОЕ: 7 операционно-ролевых позиций
-│       ├── __init__.py        # Role protocol
-│       ├── metadata_extractor.py  # PyMuPDF, без LLM
-│       ├── visual_extractor.py    # qwen3-vl:30b
-│       ├── semantic_disambiguator.py # qwen3.6:35b
-│       ├── context_resolver.py     # Локальный глоссарий
-│       ├── style_validator.py      # Rule-based
-│       ├── graph_builder.py        # qwen3.6:35b
-│       └── dispatcher.py           # Pipeline + EventBusPipeline
+│   ├── engine.py               # Legacy Orchestrator (Agent→Reflector→Agent)
+│   ├── meta_reflector.py       # ConvergenceDetector, StrategyAdaptor
+│   ├── provenance.py           # NEW: SHA-256 traceability chain
+│   ├── htr_loop.py             # NEW: Hypothesis-Test-Revisit cycle
+│   ├── cross_page_synthesizer.py # NEW: Cross-page semantic graph
+│   ├── doubt_gate.py           # NEW: Meta-cognitive confidence gate
+│   ├── dialogue_mediator.py    # NEW: Advocate/Skeptic/Synthesizer
+│   ├── smd_core.py             # NEW: FSM orchestration core
+│   └── roles/                  # 7 операционно-ролевых позиций
+│       ├── dispatcher.py
+│       ├── graph_builder.py
+│       ├── context_resolver.py
+│       └── ...
 ├── agents/
-│   ├── dashscope.py           # DashScope API (не работает без сети)
-│   └── ollama_local.py        # Локальный Ollama (основной)
-├── pipeline/normalizer.py     # Raw text → Markdown + JSON-sidecar
-└── utils/config.py            # LazyKey: keychain → env fallback
-data/
-├── docs/                      # Test PDFs (ЦОД+ПАК.pdf, карта.pdf)
-└── glossary/psb_org_structure.json  # 15 терминов ПСБ
-docs/adr/roles/                # Спецификации 7 ролей + валидация + гипотезы
-run_pipeline.py                # Вход: PDF → EventBusPipeline (7 ролей)
-run_local.py                   # Вход: PDF → старый Orchestrator
-run_pdf_test.py                # Вход: PDF → загрузка без LLM
-HANDOFF.md                     # Контекст для нового агента
+│   ├── dashscope.py
+│   └── ollama_local.py
+├── store.py                    # VectorGraphStore (FAISS + SQLite)
+├── confidence_guard.py         # Stagnation/divergence/overfitting detection
+└── utils/config.py             # LazyKey: keychain → env fallback
+
+scripts/
+├── run_cloud_pipeline.py       # Full 81-page Cloud pipeline
+├── generate_dashboard.py       # HTML dashboard generator
+├── generate_recommendations.py # Single-request C-level recommendations
+├── batch_ontology_local.py     # Local batch ontology+reflector
+├── resume_cloud_ontology.py    # Cloud ontology resumer
+├── ask_orchestrator.py         # NEW: C-level Q&A dispatcher
+└── ...
+
+data/docs/                      # Test PDFs
+data/glossary/psb_org_structure.json
+output/run_*/                   # Pipeline results
+prompts/                        # Versioned LLM prompts (.md)
+docs/adr/                       # Architecture Decision Records
+```
+
+## C-Level Interaction Protocol
+
+### When Qwen Code answers a C-level question:
+
+1. **LOAD** — read latest `output/run_*/07_recommendations.json` and `03_schemas.json`
+2. **ROUTE** — classify question type:
+   - «какие риски/возможности?» → read recommendations, apply doubt_gate
+   - «почему рекомендация X?» → provenance trace
+   - «что на странице N?» → read schema, show entities + conclusion
+   - «а что если...?» → HTR loop (hypothesis generation)
+   - «как связаны X и Y?» → cross-page graph
+3. **DOUBT-CHECK** — before answering, run doubt_gate. If confidence < 0.65, say so.
+4. **MULTI-POSITION** — for strategic questions, present advocate/skeptic/synthesizer views
+5. **PROVENANCE** — cite source page and sign form for every claim
+
+### Answer format:
+
+```
+🔴/🟡/🟢 [URGENCY] Краткий ответ (1 предложение)
+
+📄 Источник: стр. N, форма: topology/discursive/...
+🔗 Provenance: [sign_form] → [schema] → [ontology] → [recommendation]
+
+[ADVOCATE] Аргумент ЗА: ...
+[SKEPTIC] Аргумент ПРОТИВ: ...
+[SYNTHESIZER] Компромисс: ...
+
+⚠️ Зоны неизвестности: ...
+```
+
+### Example:
+
+```
+C-level: Какие риски для России в Африке?
+
+Qwen Code:
+🔴 Риски (стр. 9, 11, 14):
+
+1. Вытеснение конкурентами — США, ЕС, Китай контролируют цепочки поставок
+   📄 стр. 9, topology: Venn-диаграмма USA/EU/China
+   🔗 topology → 3 sets, 30+ minerals → 12 entities, 7 relations → HIGH urgency
+
+2. Эксклюзивные сделки блокируют доступ к активам
+   📄 стр. 9, topology: зона пересечения USA/EU
+
+[ADVOCATE] Риски реальны: Африка — 15% мирового производства, 74% бокситов
+[SKEPTIC] Россия может войти через суверенное финансирование, обходя конкурентов
+[SYNTHESIZER] Фокус на олово/хром/уран — ниши с меньшей конкуренцией
+
+⚠️ Неизвестно: точные объёмы российских инвестиций в Африке на 2026 г.
+```
+
+## Running the Orchestrator
+
+```bash
+# Ask a question to the orchestrator
+python3 scripts/ask_orchestrator.py "Какие риски для России в Африке?"
+
+# Specify run directory
+python3 scripts/ask_orchestrator.py --run output/run_2026-07-15_1107 "Почему рекомендация по олову?"
+
+# Full pipeline (81 pages, Cloud + local)
+python3 scripts/run_cloud_pipeline.py data/docs/Презентация_ИАфр_РАН_финал.pdf
+
+# Generate dashboard from existing run
+python3 scripts/generate_dashboard.py output/run_2026-07-15_1107/
 ```
 
 ## Conventions
@@ -92,42 +207,15 @@ HANDOFF.md                     # Контекст для нового агент
 - Python 3.12+, static typing (mypy compatible)
 - `ruff` for linting, line length 120
 - **Роли не вызывают другие роли.** Координация — только через Dispatcher.
-- **Промпты — роли, не инструкции.** Формат: `[РОЛЬ]...[ОГРАНИЧЕНИЕ]`. Не «опиши блоки», а «ты — Visual Extractor. Ограничение: не интерпретируй семантику».
-- **SEMANTIC_GAP — правильный ответ.** Не расшифровывай то, чего нет в документе. Отправляй в Context Resolver.
+- **Промпты — роли, не инструкции.** Формат: `[РОЛЬ]...[ОГРАНИЧЕНИЕ]`.
+- **SEMANTIC_GAP — правильный ответ.** Отправляй в Context Resolver.
 - `make lint` перед коммитом.
 
-### Project structure
-- Каждая роль — замкнутый модуль со своим контрактом (вход/выход)
-- Глоссарий — внешний источник смысла, пополняется вручную, air-gap safe
-- ADR перед каждым архитектурным решением
-
-## How To
-
-```bash
-make install        # Установка зависимостей
-make test           # pytest -v
-make lint           # ruff + mypy
-
-# Ролевой пайплайн (7 ролей, event-bus)
-python3 run_pipeline.py data/docs/ЦОД+ПАК.pdf
-
-# Старый оркестратор (Agent→Reflector→Agent)
-python3 run_local.py data/docs/ЦОД+ПАК.pdf
-
-# Тест загрузки PDF (без LLM)
-python3 run_pdf_test.py data/docs/карта.pdf
-```
-
-## API Keys
-
-Keys are NEVER hardcoded. Use macOS keychain:
-
-```bash
-security add-generic-password -a 'dashscope-modelstudio' -s 'dashscope-modelstudio-api' -w '<key>' -A
-security add-generic-password -a 'ollama-cloud' -s 'ollama-cloud-api' -w '<key>' -A
-```
-
-Keys loaded lazily via `src/utils/config.py`. Environment fallback: `DASHSCOPE_API_KEY`, `OLLAMA_CLOUD_API_KEY`.
+### C-Level answers
+- **Всегда с provenance.** Никаких утверждений без ссылки на страницу и знаковую форму.
+- **Всегда с doubt_gate.** Если confidence < 0.65 — честно предупреди.
+- **Всегда multi-position.** Для стратегических вопросов — advocate/skeptic/synthesizer.
+- **Не выдумывай.** Если данных нет — скажи «недостаточно данных».
 
 ## Repository Rules (HARD)
 
@@ -137,30 +225,11 @@ Keys loaded lazily via `src/utils/config.py`. Environment fallback: `DASHSCOPE_A
 4. **One PR = one concern.**
 5. **Commit messages in English**, imperative mood.
 
-## Parallel Agent Work
-
-| Module | Safe to parallelize with | Risk |
-|--------|--------------------------|------|
-| `src/orchestrator/roles/metadata_extractor.py` | `visual_extractor.py`, `style_validator.py` | Low |
-| `src/orchestrator/roles/semantic_disambiguator.py` | `graph_builder.py`, `context_resolver.py` | Medium |
-| `src/orchestrator/roles/dispatcher.py` | Any | **High — координатор** |
-| `src/agents/` | `src/orchestrator/roles/*` | Low |
-| `data/glossary/` | Any | Low — data-only |
-| `docs/adr/` | Any | Low — docs-only |
-
-**Parallel workflow:**
-1. Agent A: `feat/roles-visual-extractor`, Agent B: `feat/roles-disambiguator`
-2. Both work independently, push to branches
-3. PRs → aptyp78 reviews → merges
-4. Dispatcher changes require coordination
-
-**Branch naming:** `feat/<module>-<description>`, e.g. `feat/roles-context-resolver`.
-
 ## Dependencies
 
 - **Local LLM:** Ollama — qwen3-vl:30b (vision), qwen3.6:35b (reasoning/SMD), qwen3-coder-next (code)
 - **Cloud (dev):** DashScope, Ollama Cloud — only when network available
-- **Python:** pymupdf, pdfplumber, Pillow, requests
+- **Python:** pymupdf, pdfplumber, Pillow, requests, networkx (optional)
 - **Dev:** pytest, ruff, mypy
 
 ## Memory

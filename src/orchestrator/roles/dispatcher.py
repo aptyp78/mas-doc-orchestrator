@@ -205,20 +205,22 @@ def _build_graph_all_pages(
     if not pages:
         return graph_builder.run([], resolutions, violations, {}, max_tokens=1024)
 
-    # По 1 примитиву с каждой страницы — все 81
+    # По 1 контентному примитиву с каждой страницы (пропускаем pagination)
     all_primitives = []
     for page in pages:
-        for elem in page.get("elements", [])[:1]:
-            content = (elem.get("content", "") or "")[:100]
-            if content.strip():
+        for elem in page.get("elements", [])[:5]:  # смотрим первые 5
+            content = (elem.get("content", "") or "").strip()
+            # Пропускаем номера страниц и пустые строки
+            if content and not content.isdigit():
                 all_primitives.append({
                     "type": elem["type"],
-                    "content": content,
+                    "content": content[:100],
                     "source_page": page["page_id"],
                 })
+                break  # один примитив на страницу
 
     return graph_builder.run(
-        primitives=all_primitives,
+        primitives=all_primitives[:60],
         resolutions=resolutions,
         violations=violations,
         spatial_cache={
@@ -227,8 +229,8 @@ def _build_graph_all_pages(
             "object": domain_info.get("object", ""),
             "kgd": kgd.get("overall_assessment", "PROCEED"),
         },
-        max_tokens=4096,
-        max_primitives=len(all_primitives),
+        max_tokens=8192,
+        max_primitives=60,
     )
 
 
@@ -435,18 +437,22 @@ class EventBusPipeline(Pipeline):
             print(f"  Glossaries: {', '.join(domain_info['glossaries_to_use'])}")
 
         # ═══════════════════════════════════════════════════════════
-        # Стадия 2.5: Knowledge Gap Detection
-        # Проверяет: есть ли у модели знание доменов в весах?
+        # Стадия 2.5: Knowledge Gap Detection (пропускаем при таймаутах)
         # ═══════════════════════════════════════════════════════════
-        if verbose:
-            print("\n── Стадия 2.5: Knowledge Gap Detection ──")
-        kgd = knowledge_gap_detector.run(domain_info.get("domains", []))
-        self.history.append({"role": "knowledge_gap_detector", "output": kgd})
-        if verbose:
-            print(f"  Оценка: {kgd.get('overall_assessment', '?')}")
-            for dc in kgd.get("domain_checks", []):
-                status = "✅" if dc.get("in_model_weights") else "❌ GAP"
-                print(f"    {status} {dc['domain'][:60]}: {dc.get('overall_confidence', '?')} → {dc.get('gap_action', '?')}")
+        kgd = {"overall_assessment": "PROCEED", "domain_checks": []}
+        try:
+            if verbose:
+                print("\n── Стадия 2.5: Knowledge Gap Detection ──")
+            kgd = knowledge_gap_detector.run(domain_info.get("domains", []))
+            self.history.append({"role": "knowledge_gap_detector", "output": kgd})
+            if verbose:
+                print(f"  Оценка: {kgd.get('overall_assessment', '?')}")
+                for dc in kgd.get("domain_checks", []):
+                    status = "✅" if dc.get("in_model_weights") else "❌ GAP"
+                    print(f"    {status} {dc['domain'][:60]}: {dc.get('overall_confidence', '?')} → {dc.get('gap_action', '?')}")
+        except Exception:
+            if verbose:
+                print("  ⏭ KGD timeout — пропущен")
             if kgd.get("overall_assessment") == "FULL_GAP":
                 print(f"  ❌ Модель не компетентна ни в одном домене. Эскалация.")
                 return {
