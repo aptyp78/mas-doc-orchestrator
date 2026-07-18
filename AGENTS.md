@@ -12,74 +12,83 @@
 
 ## Mandatory Reading
 
-1. `docs/CONSTITUTION.md` — 6 principles, architecture constraints
-2. `docs/adr/003-constitution-roles.md` — 7 ОРП, конституция v2.1
-3. `docs/adr/smd-map.yaml` — SMD-карта деятельности
-4. `docs/adr/roles/00-hypotheses.md` — 7 гипотез о промптах
+1. `docs/CONSTITUTION.md` — 6 principles, architecture constraints, v1 criteria
+2. `docs/adr/003-constitution-roles.md` — 7 ОРП, конституция v2.2
+3. `docs/adr/004-vector-graph-store.md` — FAISS+SQLite, федеративные контуры
+4. `docs/verdicts/001-deepseek-ocr2.md` — вердикт по OCR2
 5. `HANDOFF.md` — точка входа для нового агента
+6. `QWEN.md` — основной контекст (архитектура, протокол, модули)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Dispatcher                           │
-│            (qwen3.6:35b — dynamic threshold)            │
-└─────────────────────────────────────────────────────────┘
-        ▲              ▲              ▲              ▲
-        │              │              │              │
-┌───────┴────┐  ┌──────┴──────┐  ┌───┴───────┐  ┌──┴──────────┐
-│  Metadata  │  │   Visual    │  │   Style   │  │  Semantic   │
-│ Extractor  │  │ Extractor   │  │ Validator │  │Disambiguator│
-│ (PyMuPDF)  │  │(qwen3-vl:30b)│  │(rule-based)│  │(qwen3.6:35b)│
-└────────────┘  └─────────────┘  └───────────┘  └──────┬───────┘
-                                                       │
-                                              ┌────────┴────────┐
-                                              │    Context      │
-                                              │    Resolver     │
-                                              │ (local glossary)│
-                                              └────────┬────────┘
-                                                       │
-                                              ┌────────┴────────┐
-                                              │     Graph       │
-                                              │    Builder      │
-                                              │ (qwen3.6:35b)   │
-                                              └─────────────────┘
+                   ┌──────────────────────────────┐
+                   │     C-level Manager           │
+                   └──────────────┬───────────────┘
+                                  │
+                   ┌──────────────┴───────────────┐
+                   │      Qwen Code Agent          │
+                   │   (ask_orchestrator.py)        │
+                   └──────────────┬───────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          │                       │                       │
+          ▼                       ▼                       ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│ OCR2 Pipeline   │   │ SMD Core (FSM)  │   │ Federal Layer   │
+│ (ocr2_norm)     │   │ (orchestrator/) │   │ (zone_store,    │
+│                 │   │                 │   │  federal_coord) │
+└─────────────────┘   └─────────────────┘   └─────────────────┘
 
-Stage 1 (parallel):  Metadata Extractor ‖ Visual Extractor
-Stage 2 (parallel):  Semantic Disambiguator ‖ Style Validator
-Stage 3 (sequential): Context Resolver → Graph Builder
-Stage 4 (sequential): Dispatcher → ITERATE | FALLBACK | TERMINATE
+Pipeline:
+  L0: ocr2_normalizer  → DeepSeek OCR2 (1-3s/page, local MLX)
+  L1: classifier       → 7 SMD sign forms (block-based)
+  L2: extractors       → schema extraction (text, table, image)
+  L3: ontology         → domain ontology mapper
+  L4: reflector        → C-level recommendations
+
+Orchestrator (6 modules):
+  provenance.py            → SHA-256 traceability chain
+  htr_loop.py              → Hypothesis-Test-Revisit cycle
+  cross_page_synthesizer.py → Cross-page semantic graph
+  cross_page_linker.py     → Entity-based cross-page connections
+  doubt_gate.py            → Confidence gate + unknown zones
+  dialogue_mediator.py     → Advocate/Skeptic/Synthesizer
+  smd_core.py              → FSM: Exploration→Synthesis→Doubt→Dialogue→Verification
+
+Data Layer:
+  zone_store.py         → 4096d embeddings, FAISS+SQLite persistence
+  federal_coordinator.py → Multi-circuit federated search (RRF)
+  store.py              → VectorGraphStore (FAISS + SQLite)
 ```
 
 ## Module Map
 
 ```
 src/
-├── orchestrator/
-│   ├── engine.py              # Старый Orchestrator (Agent→Reflector→Agent)
-│   ├── meta_reflector.py      # ConvergenceDetector, StrategyAdaptor
-│   └── roles/                 # НОВОЕ: 7 операционно-ролевых позиций
-│       ├── __init__.py
-│       ├── metadata_extractor.py
-│       ├── visual_extractor.py
-│       ├── semantic_disambiguator.py
-│       ├── context_resolver.py
-│       ├── style_validator.py
-│       ├── graph_builder.py
-│       └── dispatcher.py
-├── agents/
-│   ├── dashscope.py
-│   └── ollama_local.py
-├── pipeline/normalizer.py
-└── utils/config.py
-data/
-├── docs/
-└── glossary/psb_org_structure.json
-docs/adr/roles/
-run_pipeline.py
-run_local.py
-run_pdf_test.py
-HANDOFF.md
+├── semiotic/          8 files  — L1-L4 pipeline + Cloud variants
+├── orchestrator/     14 files  — orchestration core + roles + federal
+├── normalizer/        3 files  — ocr2, pdf_normalizer, vl_normalizer
+├── agents/            3 files  — dashscope, ollama_local, brave
+├── store.py                     — VectorGraphStore (FAISS+SQLite)
+├── confidence_guard.py          — stagnation/divergence/overfitting
+└── utils/config.py              — LazyKey: keychain → env fallback
+
+scripts/
+├── run_ocr2_pipeline.py         — NEW: OCR2-based pipeline (local)
+├── run_cloud_pipeline.py        — Cloud pipeline (DashScope)
+├── ask_orchestrator.py          — C-level Q&A dispatcher
+├── generate_dashboard.py        — HTML dashboard generator
+├── generate_recommendations.py  — Single-request C-level recs
+├── generate_ontology_reflection.py — Per-page ontology+reflection
+└── ...
+
+prompts/               — 14 versioned .md prompts (CHANGELOG + AUDIT)
+docs/
+├── CONSTITUTION.md
+├── architecture.md
+├── adr/               — 4 ADRs + 7 role specs
+└── verdicts/          — technology adoption verdicts
 ```
 
 ## Conventions
@@ -96,21 +105,33 @@ HANDOFF.md
 - **SEMANTIC_GAP — правильный ответ.** Отправляй в Context Resolver.
 - `make lint` перед коммитом.
 
-## How To
+### C-Level answers
+- **Всегда с provenance.** Никаких утверждений без ссылки на страницу.
+- **Всегда с doubt_gate.** Если confidence < 0.65 — честно предупреди.
+- **Всегда multi-position.** Для стратегических вопросов — advocate/skeptic/synthesizer.
+- **Не выдумывай.** Если данных нет — скажи «недостаточно данных».
+
+## Quick Start
 
 ```bash
-make install        # Установка зависимостей
-make test           # pytest -v
-make lint           # ruff + mypy
+# Full pipeline (OCR2, local)
+python3 scripts/run_ocr2_pipeline.py data/docs/Презентация_ИАфр_РАН_финал.pdf
 
-python3 run_pipeline.py data/docs/ЦОД+ПАК.pdf   # 7 ролей, event-bus
-python3 run_local.py data/docs/ЦОД+ПАК.pdf      # Старый оркестратор
-python3 run_pdf_test.py data/docs/карта.pdf      # Тест загрузки
+# Ask a question
+python3 scripts/ask_orchestrator.py "Какие риски для России в Африке?"
+
+# Generate dashboard
+python3 scripts/generate_dashboard.py output/run_ocr2_*/
+
+# Federal multi-circuit search
+python3 -c "
+from src.orchestrator.federal_coordinator import FederalCoordinator
+fc = FederalCoordinator()
+fc.register_circuit('doc1', 'output/run_1/')
+fc.register_circuit('doc2', 'output/run_2/')
+print(fc.search('минеральные ресурсы'))
+"
 ```
-
-## API Keys
-
-Never hardcoded. macOS keychain via `src/utils/config.py`. Environment fallback: `DASHSCOPE_API_KEY`, `OLLAMA_CLOUD_API_KEY`.
 
 ## Repository Rules (HARD)
 
@@ -120,22 +141,10 @@ Never hardcoded. macOS keychain via `src/utils/config.py`. Environment fallback:
 4. **One PR = one concern.**
 5. **Commit messages in English**, imperative mood.
 
-## Parallel Agent Work
-
-| Module | Safe to parallelize with | Risk |
-|--------|--------------------------|------|
-| `src/orchestrator/roles/metadata_extractor.py` | `visual_extractor.py`, `style_validator.py` | Low |
-| `src/orchestrator/roles/semantic_disambiguator.py` | `graph_builder.py`, `context_resolver.py` | Medium |
-| `src/orchestrator/roles/dispatcher.py` | Any | **High — координатор** |
-| `src/agents/` | `src/orchestrator/roles/*` | Low |
-| `data/glossary/` | Any | Low |
-| `docs/adr/` | Any | Low |
-
-**Branch naming:** `feat/<module>-<description>`, e.g. `feat/roles-context-resolver`.
-
 ## Dependencies
 
-- **Local LLM:** Ollama — qwen3-vl:30b (vision), qwen3.6:35b (reasoning/SMD), qwen3-coder-next (code)
+- **Local LLM:** Ollama — qwen3-vl:30b (vision), qwen3.6:35b (reasoning/SMD), qwen3-embedding:8b (4096d)
+- **OCR:** DeepSeek OCR2 (MLX, Apple Silicon) — replaces Tesseract + Cloud vision
 - **Cloud (dev):** DashScope, Ollama Cloud — only when network available
 - **Python:** pymupdf, pdfplumber, Pillow, requests
 - **Dev:** pytest, ruff, mypy

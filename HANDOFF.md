@@ -1,133 +1,79 @@
-# HANDOFF: от облачной DeepSeek V4 Pro → локальному qwen3-coder-next
+# HANDOFF — точка входа для нового агента
 
-**Дата:** 2026-07-12 16:45 YEKAT
-**От:** DeepSeek V4 Pro (облако) + пользователь
-**Кому:** qwen3-coder-next (локальный Ollama, M5 Max, 128GB, 262K ctx)
-**Режим:** air-gap (в полёте, сеть нестабильна)
-**Репозиторий:** https://github.com/aptyp78/mas-doc-orchestrator
+**Дата:** 2026-07-18
+**Ветка:** `feat/orchestrator`
+**Статус:** активная разработка
 
----
+## Что это за проект
 
-## 1. ГДЕ МЫ СЕЙЧАС
+**AI Canvas** — суверенная среда анализа и ассистирования для C-level руководителей. Zero-shot парсинг гетерогенных PDF в федеративное векторно-графовое знание. On-premise, air-gap capable.
 
-### Проект: AI Canvas / MAS Doc Orchestrator
-Технология универсального zero-shot парсинга PDF через Multi-Agent System с циклами рефлексии. Методологическая основа — СМД Г.П. Щедровицкого (Activity Theory + операционно-ролевые позиции).
+## Текущее состояние (2026-07-18)
 
-### Последний коммит: `9541a97`
-```
-feat: event-bus pipeline + glossary fix + карта.pdf test
-```
+### 4-уровневый семиотический конвейер
+- L0: DeepSeek OCR2 (1-3s/стр, локальный MLX) — заменяет Tesseract + Cloud vision
+- L1: SMD-классификатор — 7 знаковых форм (discursive, topology, matrix, hierarchy, spatial, enumeration, dynamics)
+- L2: Экстракторы схем — Venn, hierarchy, matrix, enumeration, spatial, dynamics
+- L3: Онтологический маппер — entities + relations + model
+- L4: Прагматический рефлектор — C-level рекомендации
 
-### Что работает (проверено сегодня)
+### Оркестратор стратегического мышления (6 модулей)
+- `provenance.py` — SHA-256 цепь: PDF → форма → схема → онтология → рекомендация
+- `htr_loop.py` — цикл «Гипотеза → Проверка → Пересмотр»
+- `cross_page_synthesizer.py` — кросс-страничный семантический граф
+- `cross_page_linker.py` — граф связей между зонами (entity-based)
+- `doubt_gate.py` — мета-когнитивный вентиль: блокировка LOW-confidence
+- `dialogue_mediator.py` — многопозиционная аргументация (advocate/skeptic/synthesizer)
+- `smd_core.py` — FSM-контроллер: Exploration → Synthesis → Doubt → Dialogue → Verification
 
-```
-src/orchestrator/roles/     ← 7 ролей, каждая — замкнутый модуль
-├── metadata_extractor.py   ← PyMuPDF, без LLM
-├── visual_extractor.py     ← qwen3-vl:30b (vision)
-├── semantic_disambiguator.py ← qwen3.6:35b (text)
-├── context_resolver.py     ← локальный глоссарий
-├── style_validator.py      ← rule-based
-├── graph_builder.py        ← qwen3.6:35b (reasoning)
-└── dispatcher.py           ← Pipeline + EventBusPipeline + Dispatcher
+### Данные
+- `zone_store.py` — 141 зона × 4096d эмбеддингов, FAISS+SQLite persistence
+- `federal_coordinator.py` — мультиконтурный федеративный поиск (RRF-слияние)
+- `store.py` — VectorGraphStore (FAISS + SQLite)
 
-data/glossary/psb_org_structure.json  ← 15 терминов ПСБ
+### Интерфейс
+- `ask_orchestrator.py` — C-level Q&A диспетчер с page-aware retrieval
+- `generate_dashboard.py` — интерактивный HTML дашборд
+- `QWEN.md` — инструкции для Qwen Code Agent
 
-docs/adr/roles/             ← 7 спецификаций ролей + валидация + гипотезы
-docs/adr/003-constitution-roles.md  ← конституция v2.1
-docs/adr/smd-map.yaml       ← SMD-карта v2.1
-```
+## Ключевые файлы для чтения
 
-### Результаты прогонов
+1. `docs/CONSTITUTION.md` — 6 принципов, архитектурные ограничения
+2. `QWEN.md` — полная архитектура, модульная карта, протокол взаимодействия
+3. `docs/adr/003-constitution-roles.md` — 7 ОРП, конституция v2.2
+4. `docs/adr/004-vector-graph-store.md` — FAISS+SQLite, федеративные контуры
+5. `docs/verdicts/001-deepseek-ocr2.md` — вердикт по OCR2 (×28 быстрее Cloud)
+6. `prompts/CHANGELOG.md` — история изменений промптов
 
-| Документ | Пайплайн | Confidence | Время | Dispatcher |
-|----------|---------|------------|-------|------------|
-| ЦОД+ПАК.pdf | EventBus | 1.0 | 191s | TERMINATE |
-| карта.pdf | EventBus | 0.94 | 160s | ITERATE |
+## Последние архитектурные решения
 
-### Ключевое достижение
-БИБ = «Блок информационной безопасности» — Context Resolver + глоссарий дали правильный ответ. Старый AGENT_PROMPT галлюцинировал 3 разных варианта.
+1. **DeepSeek OCR2 принят** (2026-07-18) — заменяет Tesseract + Cloud vision, ×28 быстрее
+2. **Federal Coordinator** (2026-07-16) — мультиконтурный федеративный поиск, RRF-слияние
+3. **SMD Orchestrator** (2026-07-15) — 6-step strategic thinking engine
+4. **Data-Centric AI** (2026-07-15) — зонно-ориентированное хранение вместо страничного
 
----
+## Что в работе
 
-## 2. ЧТО ДЕЛАТЬ ДАЛЬШЕ (приоритет)
+- [ ] L1 Classifier Agent для OCR2 (image → {needs_vl: true/false})
+- [ ] Полный прогон 81 стр. через OCR2-пайплайн
+- [ ] Мультифедерация: 2+ документа в Federal Coordinator
+- [ ] Per-page онтология + рефлексия (04_ontologies.json, 05_reflections.json)
 
-### P0: Эксперименты с ролевыми промптами на локальном инференсе
-Взять спецификации ролей из `docs/adr/roles/0*.md`, прогнать каждую роль отдельно на реальных данных, сравнить role-prompt vs instruction-prompt. Гипотезы уже сформулированы в `docs/adr/roles/00-hypotheses.md`. H1 и H2 подтверждены, H6 и H7 — новые.
+## Ветки
 
-### P1: Обновить конституцию и знания проектные
-После экспериментов — обновить `docs/adr/003-constitution-roles.md` и `docs/adr/smd-map.yaml` с учётом новых данных. Зафиксировать в `memory/` проектной памяти.
+- `feat/orchestrator` — **активная**, все новые модули
+- `feat/production-pipeline` — предыдущая версия (Cloud-пайплайн)
 
-### P2: Интеграция ролей в engine.py
-Сейчас `engine.py` использует старый Orchestrator (Agent→Reflector→Agent). Новый Pipeline лежит в `dispatcher.py`. Нужно заменить или предоставить выбор.
-
-### P3: Второй раунд рефлексии по SMD
-После экспериментов — прогнать результаты через qwen3.6:35b с методологическим промптом и уточнить understanding.
-
----
-
-## 3. КАК ЗАПУСКАТЬ
+## Быстрый старт
 
 ```bash
-cd /Users/arturoceretnyj/mas-doc-orchestrator
+# Полный OCR2-пайплайн
+python3 scripts/run_ocr2_pipeline.py data/docs/Презентация_ИАфр_РАН_финал.pdf
 
-# Ролевой пайплайн (7 ролей, event-bus)
-python3 run_pipeline.py data/docs/ЦОД+ПАК.pdf
+# C-level Q&A
+python3 scripts/ask_orchestrator.py "Какие риски?"
 
-# Старый оркестратор (Agent→Reflector→Agent)
-python3 run_local.py data/docs/ЦОД+ПАК.pdf
-
-# Тест загрузки PDF (без LLM)
-python3 run_pdf_test.py data/docs/карта.pdf
-
-# Линт
-ruff check src/ --fix && ruff format src/
-
-# Типы
-mypy src/ --ignore-missing-imports
+# Дашборд
+python3 scripts/generate_dashboard.py output/run_ocr2_*/
+open output/run_ocr2_*/08_dashboard.html
 ```
-
----
-
-## 4. АРХИТЕКТУРНЫЕ РЕШЕНИЯ (не ломать)
-
-1. **Роли не вызывают друг друга.** Координация — только через Dispatcher/Pipeline.
-2. **qwen3-vl:30b для vision.** Формат: `images` полем (не `content[]` массив). Изображения ≤ 200KB. DPI ≤ 72 для скорости.
-3. **qwen3.6:35b для reasoning.** Использовать для Disambiguator, Dispatcher, Graph Builder. Не для vision.
-4. **Промпты — роли, не инструкции.** Формат: `[РОЛЬ]...[ОГРАНИЧЕНИЕ]`. Не «опиши блоки», а «ты — Visual Extractor. Ограничение: не интерпретируй семантику».
-5. **SEMANTIC_GAP — правильный ответ.** Не пытайся расшифровать то, чего нет в документе. Отправляй в Context Resolver → глоссарий.
-6. **Глоссарий — внешний источник смысла.** Пополняется вручную. Air-gap safe.
-
----
-
-## 5. КОНТЕКСТ, КОТОРЫЙ НУЖНО ПОМНИТЬ
-
-### Методологическая позиция
-- Мы не парсим документы. Мы восстанавливаем деятельность, которая их породила.
-- Смысл не извлекается из текста — он находится в системе деятельности вне документа.
-- Противоречия (SLA vs depth, expectations vs LLM quality, air-gap vs cloud) — движущие механизмы эволюции, не ошибки.
-- qwen3.6:35b знает СМД и Activity Theory. qwen3-coder-next — нет. Используй правильную модель для правильной роли.
-
-### Что уже не работает
-- DashScope API (сеть недоступна)
-- GitHub API (сеть нестабильна) — git push может не работать в полёте
-
-### Что работает локально
-- Ollama: qwen3-vl:30b (19GB), qwen3.6:35b (23GB), qwen3-coder-next (51GB)
-- PyMuPDF (fitz) — осторожно с `page.rect.width` в f-строках, баг в 1.28.0
-- Все роли в `src/orchestrator/roles/`
-
----
-
-## 6. БЫСТРЫЙ СТАРТ ДЛЯ CODER
-
-```
-1. Прочитай docs/adr/003-constitution-roles.md — поймёшь архитектуру
-2. Прочитай docs/adr/roles/00-hypotheses.md — поймёшь что проверять
-3. Запусти python3 run_pipeline.py data/docs/ЦОД+ПАК.pdf — увидишь пайплайн
-4. Смотри вывод в output/pipeline_result.json
-5. Экспериментируй с промптами в src/orchestrator/roles/*.py
-6. Не ломай формат [РОЛЬ]...[ОГРАНИЧЕНИЕ]
-7. Коммить с сообщениями на русском
-```
-
-Удачи. Пользователь в полёте, сеть нестабильна. Вся работа — локально на M5 Max.

@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-07-18
+
+### Новые промпты оркестратора (feat/orchestrator)
+
+Добавлены 6 промптов для модулей стратегического мышления. Все используют формат `[РОЛЬ]...[ОГРАНИЧЕНИЕ]` с JSON-схемами. Модель: qwen3.6:35b (локальная Ollama).
+
+| Модуль | Промпт | Тип | Статус |
+|--------|--------|-----|--------|
+| `htr_loop.py` | HypothesisGenerator, Verifier | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `doubt_gate.py` | MetaCognitiveReflector | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `dialogue_mediator.py` | CounterPositionAgent | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `cross_page_synthesizer.py` | PairPrompt, GlobalPrompt | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `cross_page_linker.py` | VerifyPrompt | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `smd_core.py` | FSM mode routing | код | ✅ v1.0 |
+
+### OCR2 Pipeline (новый)
+
+| Модуль | Промпт | Тип | Статус |
+|--------|--------|-----|--------|
+| `run_ocr2_pipeline.py` | VL Extractor (image blocks) | `[РОЛЬ]` + JSON | ✅ v1.0 |
+| `ocr2_normalizer.py` | Block → SMD form classifier | rule-based | ✅ v1.0 |
+
 ## 2026-07-13
 
 ### domain_analyzer.md — v3.0 (P1 fix)
