@@ -25,16 +25,21 @@ from src.orchestrator.cross_page_synthesizer import CrossPageSynthesizer
 from src.orchestrator.doubt_gate import MetaCognitiveReflector, DoubtAssessment
 from src.orchestrator.dialogue_mediator import DialogueOrchestrator, DialogueState
 from src.orchestrator.provenance import ProvenanceMapper, ProvenanceChain
+from src.orchestrator.perspective_shift import PerspectiveShiftAgent, PerspectiveShiftResult
+from src.orchestrator.user_position import UserPosition, PositionAligner
+from src.orchestrator.action_loop import ActionLoop, ActionRecord, ActionStatus
 
 
 class OrchestrationMode(Enum):
     """Режимы оркестрации."""
-    EXPLORATION = auto()   # Генерация гипотез (HTR-цикл)
-    SYNTHESIS = auto()     # Кросс-страничный синтез
-    DOUBT = auto()         # Оценка уверенности, блокировка
-    DIALOGUE = auto()      # Многопозиционная аргументация
-    VERIFICATION = auto()  # Проверка provenancе
-    COMPLETE = auto()      # Завершено
+    EXPLORATION = auto()      # Генерация гипотез (HTR-цикл)
+    SYNTHESIS = auto()        # Кросс-страничный синтез
+    DOUBT = auto()            # Оценка уверенности, блокировка
+    PERSPECTIVE_SHIFT = auto()  # Смена формата представления
+    DIALOGUE = auto()         # Многопозиционная аргументация
+    VERIFICATION = auto()     # Проверка provenancе
+    ACTION_LOOP = auto()      # Замкнутый цикл действия
+    COMPLETE = auto()         # Завершено
 
 
 @dataclass
@@ -52,8 +57,10 @@ class OrchestrationState:
     # Результаты оркестрации
     htr_state: HTRState | None = None
     doubt_assessment: DoubtAssessment | None = None
+    perspective_shift: PerspectiveShiftResult | None = None
     dialogue_state: DialogueState | None = None
     provenance_chain: ProvenanceChain | None = None
+    action_record: ActionRecord | None = None
 
     # Мета-данные
     iterations: int = 0
@@ -79,19 +86,25 @@ class OrchestrationResult:
 class SMDOrchestrationCore:
     """Центральное ядро SMD-оркестрации."""
 
-    def __init__(self):
+    def __init__(self, user_position: UserPosition | None = None):
         self.htr_loop = HTRLoop(max_iterations=3)
         self.synthesizer = CrossPageSynthesizer()
         self.doubt_gate = MetaCognitiveReflector(threshold=0.65)
+        self.perspective_agent = PerspectiveShiftAgent()
         self.dialogue = DialogueOrchestrator()
         self.provenance = ProvenanceMapper()
+        self.action_loop = ActionLoop()
+        self.position_aligner = PositionAligner()
+        self.user_position = user_position or UserPosition()
 
         self.mode_handlers = {
             OrchestrationMode.EXPLORATION: self._handle_exploration,
             OrchestrationMode.SYNTHESIS: self._handle_synthesis,
             OrchestrationMode.DOUBT: self._handle_doubt,
+            OrchestrationMode.PERSPECTIVE_SHIFT: self._handle_perspective_shift,
             OrchestrationMode.DIALOGUE: self._handle_dialogue,
             OrchestrationMode.VERIFICATION: self._handle_verification,
+            OrchestrationMode.ACTION_LOOP: self._handle_action_loop,
         }
 
     def _next_mode(self, current: OrchestrationMode, state: OrchestrationState) -> OrchestrationMode:
@@ -104,13 +117,19 @@ class SMDOrchestrationCore:
 
         if current == OrchestrationMode.DOUBT:
             if state.doubt_assessment and state.doubt_assessment.blocked:
-                return OrchestrationMode.DIALOGUE
+                return OrchestrationMode.PERSPECTIVE_SHIFT
             return OrchestrationMode.VERIFICATION
+
+        if current == OrchestrationMode.PERSPECTIVE_SHIFT:
+            return OrchestrationMode.DIALOGUE
 
         if current == OrchestrationMode.DIALOGUE:
             return OrchestrationMode.VERIFICATION
 
         if current == OrchestrationMode.VERIFICATION:
+            return OrchestrationMode.ACTION_LOOP
+
+        if current == OrchestrationMode.ACTION_LOOP:
             return OrchestrationMode.COMPLETE
 
         return OrchestrationMode.COMPLETE
@@ -161,6 +180,22 @@ class SMDOrchestrationCore:
         state.elapsed_s += time.time() - t0
         return state
 
+    def _handle_perspective_shift(self, state: OrchestrationState) -> OrchestrationState:
+        """Смена формата представления проблемы."""
+        if not state.reflection:
+            state.mode = OrchestrationMode.COMPLETE
+            return state
+
+        print(f"  [PERSPECTIVE_SHIFT] p{state.page_id}: смена угла зрения...")
+        t0 = time.time()
+
+        question = state.reflection.get("recommended_action", f"Стратегия на стр. {state.page_id}")
+        context = json.dumps(state.ontology, ensure_ascii=False)[:3000]
+
+        state.perspective_shift = self.perspective_agent.shift(question, context)
+        state.elapsed_s += time.time() - t0
+        return state
+
     def _handle_dialogue(self, state: OrchestrationState) -> OrchestrationState:
         """Стратегический диалог."""
         if not state.ontology or not state.reflection:
@@ -204,6 +239,19 @@ class SMDOrchestrationCore:
         state.quality_score = quality
 
         state.elapsed_s += time.time() - t0
+        return state
+
+    def _handle_action_loop(self, state: OrchestrationState) -> OrchestrationState:
+        """Замкнутый цикл действия: фиксирует рекомендацию для обратной связи."""
+        if not state.final_recommendation:
+            state.mode = OrchestrationMode.COMPLETE
+            return state
+
+        action = state.final_recommendation.get("action", "")
+        if action:
+            state.action_record = self.action_loop.recommend(action, state.page_id)
+            print(f"  [ACTION_LOOP] p{state.page_id}: action recorded → {state.action_record.action_id}")
+
         return state
 
     def orchestrate_page(self, page_id: int, classification: dict, schema: dict,
