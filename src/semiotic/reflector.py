@@ -1,9 +1,9 @@
-"""Уровень 4: Прагматический рефлектор.
+"""Уровень 4: Прагматический рефлектор (Activity Theory).
 
-Берёт онтологическую модель (из уровня 3) и синтезирует вывод для C-level:
+Берёт онтологическую модель деятельности (из уровня 3) и синтезирует вывод для C-level:
 - Что это значит для руководителя?
-- Какие риски? Какие возможности?
-- Какой recommended action?
+- Какие риски в деятельности? Какие возможности?
+- Какой recommended action для оптимизации деятельности?
 
 Использует qwen3.6:35b.
 """
@@ -14,29 +14,11 @@ import json
 import urllib.request
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.6:35b"
 
-REFLECTOR_PROMPT = """[РОЛЬ] Прагматический рефлектор
-[ПРЕДМЕТ] Онтологическая модель страницы документа
-[ЗАДАЧА] Синтезируй вывод для C-level руководителя
-[ПРАВИЛА]
-1. Оцени СТРАТЕГИЧЕСКУЮ ЗНАЧИМОСТЬ: почему это важно для российского бизнеса/государства?
-2. Выдели КЛЮЧЕВЫЕ РИСКИ: что может пойти не так?
-3. Выдели ВОЗМОЖНОСТИ: где окно для российских экономических операторов?
-4. Дай RECOMMENDED ACTION: одно конкретное действие для C-level
-5. Оцени УВЕРЕННОСТЬ: HIGH/MEDIUM/LOW — насколько данные поддерживают вывод
-[ОГРАНИЧЕНИЕ] Не выдумывай. Только на основе онтологической модели. Вывод — для российского C-level.
-
-Формат: JSON
-{
-  "strategic_significance": "string",
-  "risks": ["string", ...],
-  "opportunities": ["string", ...],
-  "recommended_action": "string",
-  "confidence": "HIGH|MEDIUM|LOW",
-  "urgency": "HIGH|MEDIUM|LOW"
-}"""
+REFLECTOR_PROMPT = load_prompt("semiotic/reflector")
 
 
 def reflect(ontology: dict, domain_context: str = "") -> dict:

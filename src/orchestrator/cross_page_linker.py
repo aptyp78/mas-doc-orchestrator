@@ -60,23 +60,7 @@ def _fuzzy_match(a: str, b: str, threshold: float = 0.6) -> bool:
 class CrossPageLinker:
     """Строит граф связей между зонами."""
 
-    VERIFY_PROMPT = """[РОЛЬ] Верификатор кросс-страничных связей
-[ПРЕДМЕТ] Две зоны документа с общими сущностями
-[ЗАДАЧА] Определи тип связи между зонами
-[ПРАВИЛА]
-1. Типы: КАСКАДНЫЙ_ЭФФЕКТ, КОНФЛИКТ_ИНТЕРЕСОВ, РЕСУРСНАЯ_ЗАВИСИМОСТЬ, ПРИЧИННАЯ_СВЯЗЬ, ТЕМАТИЧЕСКАЯ_БЛИЗОСТЬ
-2. Если связи нет — "none"
-3. Оцени strength: 0.0-1.0
-[ОГРАНИЧЕНИЕ] Только если связь действительно есть.
-
-Формат: JSON
-{{"relation_type": "string or none", "strength": 0.0-1.0, "explanation": "string"}}
-
-## ЗОНА A (стр. {page_a}, {form_a})
-{content_a}
-
-## ЗОНА B (стр. {page_b}, {form_b})
-{content_b}"""
+    VERIFY_PROMPT = load_prompt("orchestrator/cross_page_linker_verify")
 
     def __init__(self):
         self.edges: list[dict] = []
@@ -169,6 +153,7 @@ class CrossPageLinker:
 
         # BFS
         from collections import deque
+from src.utils.prompt_loader import load_prompt
         visited = {page_a}
         queue = deque([(page_a, [])])
 

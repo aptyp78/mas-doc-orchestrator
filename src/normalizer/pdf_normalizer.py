@@ -15,46 +15,14 @@ import urllib.request
 import fitz
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 # LLM для разделения зон на mixed-страницах
 VISION_MODEL = "qwen3-vl:30b"
 
-ZONE_SEPARATION_PROMPT = """[РОЛЬ] Zone Separator
-[ЗАДАЧА] Раздели страницу на смысловые зоны
-[ПРАВИЛА]
-- Для каждой зоны укажи: type (text/image/vector), bbox [x,y,w,h], label
-- Если текст поверх картинки → зона "text-over-image"
-- Если картинка с подписью → зона "image-with-caption", свяжи их
-- Если фоновое изображение → зона "background", не смешивай с текстом
-- Если мелкий логотип/декор → зона "decoration"
-[ОГРАНИЧЕНИЕ] Не интерпретируй содержание зон. Только структура.
+ZONE_SEPARATION_PROMPT = load_prompt("normalizer/zone_separator")
 
-Формат вывода: JSON
-{
-  "zones": [
-    {"type": "text", "bbox": [x, y, w, h], "label": "основной текст"},
-    {"type": "image", "bbox": [x, y, w, h], "label": "диаграмма"},
-    {"type": "text-over-image", "bbox": [x, y, w, h], "label": "подпись к диаграмме"}
-  ],
-  "page_classification": "mixed"
-}"""
-
-IMAGE_CONTENT_PROMPT = """[РОЛЬ] Image Content Extractor
-[ЗАДАЧА] Извлеки текстовое содержание из изображения
-[ПРАВИЛА]
-- Если на изображении есть текст — извлеки его дословно
-- Если это схема/диаграмма — опиши её структуру (узлы, связи, заголовки)
-- Если это слайд презентации — перечисли заголовки и ключевые пункты
-- Если это фотография — опиши, что на ней изображено
-[ОГРАНИЧЕНИЕ] Не делай выводов о домене или назначении. Только извлечение содержания.
-
-Формат вывода: JSON
-{
-  "has_text": true/false,
-  "extracted_text": "дословный текст с изображения",
-  "content_type": "slide/diagram/photo/document/other",
-  "description": "краткое описание структуры изображения"
-}"""
+IMAGE_CONTENT_PROMPT = load_prompt("normalizer/image_content_extractor")
 
 
 def _extract_page_primitives(page: fitz.Page) -> dict:

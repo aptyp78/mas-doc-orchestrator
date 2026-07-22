@@ -14,6 +14,7 @@ import urllib.request
 from collections import defaultdict, deque
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.6:35b"
 
@@ -99,52 +100,9 @@ class SimpleGraph:
 class CrossPageSynthesizer:
     """Синтезирует связи между страницами документа."""
 
-    PAIR_PROMPT = """[РОЛЬ] Синтезатор кросс-страничных связей
-[ПРЕДМЕТ] Две онтологические модели из разных страниц документа
-[ЗАДАЧА] Найди связь между страницами
-[ПРАВИЛА]
-1. Определи тип связи: КАСКАДНЫЙ_ЭФФЕКТ, КОНФЛИКТ_ИНТЕРЕСОВ, РЕСУРСНАЯ_ЗАВИСИМОСТЬ, ПРИЧИННАЯ_СВЯЗЬ, ТЕМАТИЧЕСКАЯ_БЛИЗОСТЬ
-2. Если связи нет — верни None
-3. Оцени силу связи: 0.0-1.0
-4. Объясни связь одним предложением
-[ОГРАНИЧЕНИЕ] Только если связь действительно есть. Не выдумывай.
+    PAIR_PROMPT = load_prompt("orchestrator/cross_page_synthesizer_pair")
 
-Формат: JSON
-{{
-  "relation_type": "string or null",
-  "strength": 0.0-1.0,
-  "explanation": "string",
-  "direction": "A->B|B->A|bidirectional"
-}}
-
-## СТРАНИЦА A (p{a_id})
-{a_ontology}
-
-## СТРАНИЦА B (p{b_id})
-{b_ontology}"""
-
-    GLOBAL_PROMPT = """[РОЛЬ] Синтезатор макро-структуры документа
-[ПРЕДМЕТ] Сводка онтологий {n_pages} страниц + граф связей
-[ЗАДАЧА] Выяви макро-структуру документа:
-1. Кластеры страниц (тематические блоки)
-2. Скрытые драйверы изменений (latent drivers)
-3. Ключевые точки leverage (где минимальное воздействие даёт максимальный эффект)
-4. Стратегические противоречия (conflicting signals)
-[ОГРАНИЧЕНИЕ] Только на основе данных. Не выдумывай.
-
-Формат: JSON
-{{
-  "clusters": [{{"name": "string", "pages": [N], "theme": "string"}}],
-  "latent_drivers": ["string"],
-  "leverage_points": [{{"page": N, "description": "string", "impact": "HIGH|MEDIUM|LOW"}}],
-  "strategic_contradictions": [{{"pages": [N, M], "description": "string"}}]
-}}
-
-## СВОДКА ОНТОЛОГИЙ
-{summary}
-
-## ГРАФ СВЯЗЕЙ
-{edges}"""
+    GLOBAL_PROMPT = load_prompt("orchestrator/cross_page_synthesizer_global")
 
     def __init__(self):
         self.graph = SimpleGraph()

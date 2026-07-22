@@ -6,6 +6,12 @@
 Инициирует обратный проход по графу для пересмотра.
 
 Использует локальную Ollama (qwen3.6:35b).
+
+Динамический порог confidence по классу документа (smd-map.yaml):
+- text_only: 0.75 (простые текстовые документы)
+- mixed_text_vector: 0.80 (текст + векторная графика)
+- mixed_text_image: 0.82 (текст + растровые изображения)
+- complex_diagram: 0.88 (сложные диаграммы: Venn, графики)
 """
 
 from __future__ import annotations
@@ -16,9 +22,32 @@ import urllib.request
 from dataclasses import dataclass, field
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.6:35b"
-CONFIDENCE_THRESHOLD = 0.65
+CONFIDENCE_THRESHOLD = 0.65  # Дефолтный порог (для обратной совместимости)
+
+# Динамические пороги по классу документа (smd-map.yaml)
+# Только классы по модальности (L0), без алиасов для знаковых форм СМД (L1)
+DYNAMIC_THRESHOLDS = {
+    "text_only": 0.75,              # Только текстовые примитивы
+    "mixed_text_vector": 0.80,      # Текст + векторная графика
+    "mixed_text_image": 0.82,       # Текст + растровые изображения
+    "complex_diagram": 0.88,        # Сложные диаграммы (Venn, графики)
+}
+
+
+def dynamic_threshold(doc_class: str) -> float:
+    """Возвращает динамический порог confidence для класса документа.
+    
+    Args:
+        doc_class: класс документа (text_only, mixed_text_vector, mixed_text_image, complex_diagram)
+                   или знаковая форма (discursive, topology, matrix, hierarchy, venn, spatial)
+    
+    Returns:
+        Порог confidence (0.0-1.0)
+    """
+    return DYNAMIC_THRESHOLDS.get(doc_class, CONFIDENCE_THRESHOLD)
 
 
 @dataclass
@@ -28,6 +57,7 @@ class DoubtAssessment:
     confidence: float
     threshold: float
     blocked: bool  # True = рекомендация заблокирована
+    doc_class: str = "text_only"  # Класс документа для динамического порога
     unknown_zones: list[str] = field(default_factory=list)
     critical_assumptions: list[str] = field(default_factory=list)
     strategic_dilemmas: list[dict] = field(default_factory=list)
@@ -64,46 +94,25 @@ def _parse_json(text: str) -> dict:
 class MetaCognitiveReflector:
     """Мета-когнитивный рефлектор: оценивает уверенность и блокирует/пропускает рекомендации."""
 
-    ASSESS_PROMPT = """[РОЛЬ] Мета-когнитивный рефлектор
-[ПРЕДМЕТ] Онтология + рекомендация для страницы документа
-[ЗАДАЧА] Оцени эпистемическую надёжность рекомендации
-[ПРАВИЛА]
-1. Выдели ЗОНЫ НЕИЗВЕСТНОСТИ — что мы не знаем, но что важно для вывода
-2. Выдели КРИТИЧЕСКИЕ ДОПУЩЕНИЯ — на каких предположениях держится вывод
-3. Сформулируй СТРАТЕГИЧЕСКИЕ ДИЛЕММЫ — альтернативы с равными рисками
-4. Вынеси РЕШЕНИЕ:
-   - "accept" — вывод надёжен, можно действовать
-   - "revisit" — нужно пересмотреть (вернуться к онтологии)
-   - "escalate" — нужен человеческий эксперт
-   - "reject" — вывод не обоснован
-5. Пересчитай confidence (0.0-1.0)
-[ОГРАНИЧЕНИЕ] Будь скептиком. Сомневайся. Ищи слабые места.
-
-Формат: JSON
-{{
-  "confidence": 0.0-1.0,
-  "unknown_zones": ["string"],
-  "critical_assumptions": ["string"],
-  "strategic_dilemmas": [
-    {{"option_a": "string", "option_b": "string", "tradeoff": "string"}}
-  ],
-  "recommended_action": "accept|revisit|escalate|reject",
-  "rationale": "string"
-}}
-
-## ОНТОЛОГИЯ
-{ontology}
-
-## РЕКОМЕНДАЦИЯ
-{recommendation}"""
+    ASSESS_PROMPT = load_prompt("orchestrator/doubt_gate_assess")
 
     def __init__(self, threshold: float = CONFIDENCE_THRESHOLD):
         self.threshold = threshold
         self.assessments: dict[int, DoubtAssessment] = {}
 
-    def assess(self, page_id: int, ontology: dict, reflection: dict) -> DoubtAssessment:
-        """Оценивает одну рекомендацию."""
+    def assess(self, page_id: int, ontology: dict, reflection: dict, doc_class: str = "text_only") -> DoubtAssessment:
+        """Оценивает одну рекомендацию.
+        
+        Args:
+            page_id: номер страницы
+            ontology: онтология страницы
+            reflection: рекомендация/рефлексия страницы
+            doc_class: класс документа для динамического порога (по умолчанию "text_only")
+        """
         t0 = time.time()
+
+        # Динамический порог по классу документа
+        threshold = dynamic_threshold(doc_class)
 
         ont_str = json.dumps(ontology, ensure_ascii=False)[:2000]
         refl_str = json.dumps(reflection, ensure_ascii=False)[:1000]
@@ -112,13 +121,14 @@ class MetaCognitiveReflector:
         result = _parse_json(_call_ollama(prompt, max_tokens=1024))
 
         confidence = result.get("confidence", 0.5)
-        blocked = confidence < self.threshold
+        blocked = confidence < threshold
 
         assessment = DoubtAssessment(
             page_id=page_id,
             confidence=confidence,
-            threshold=self.threshold,
+            threshold=threshold,
             blocked=blocked,
+            doc_class=doc_class,
             unknown_zones=result.get("unknown_zones", []),
             critical_assumptions=result.get("critical_assumptions", []),
             strategic_dilemmas=result.get("strategic_dilemmas", []),
@@ -129,7 +139,7 @@ class MetaCognitiveReflector:
 
         elapsed = time.time() - t0
         status = "🚫 BLOCKED" if blocked else "✅ PASSED"
-        print(f"    DoubtGate p{page_id}: conf={confidence:.2f} {status} → {assessment.recommended_action} — {elapsed:.1f}s")
+        print(f"    DoubtGate p{page_id}: conf={confidence:.2f} threshold={threshold:.2f} [{doc_class}] {status} → {assessment.recommended_action} — {elapsed:.1f}s")
 
         return assessment
 
@@ -167,9 +177,12 @@ class MetaCognitiveReflector:
     def to_dict(self) -> dict:
         return {
             "threshold": self.threshold,
+            "dynamic_thresholds": DYNAMIC_THRESHOLDS,
             "assessments": {
                 str(pid): {
                     "confidence": a.confidence,
+                    "threshold": a.threshold,
+                    "doc_class": a.doc_class,
                     "blocked": a.blocked,
                     "unknown_zones": a.unknown_zones,
                     "critical_assumptions": a.critical_assumptions,

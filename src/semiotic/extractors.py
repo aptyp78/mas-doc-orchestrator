@@ -12,6 +12,7 @@ import urllib.request
 import fitz
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 VISION_MODEL = "qwen3-vl:30b"
 
@@ -19,32 +20,7 @@ VISION_MODEL = "qwen3-vl:30b"
 # Venn Extractor
 # ═══════════════════════════════════════════════════════════════
 
-VENN_PROMPT = """[РОЛЬ] Экстрактор Venn-диаграммы
-[ПРЕДМЕТ] Страница с диаграммой Венна (пересекающиеся множества)
-[ЗАДАЧА] Извлеки структуру диаграммы как схему множеств
-[ПРАВИЛА]
-1. Перечисли ВСЕ множества (круги) — кто/что они представляют
-2. Для каждого множества — перечисли ВСЕ элементы внутри
-3. Перечисли ВСЕ зоны пересечения — какие множества пересекаются и какие элементы в пересечении
-4. Выдели центральную зону (пересечение всех) — если есть
-5. Извлеки ВСЕ цифры, проценты, метрики со страницы
-6. Извлеки вывод/заголовок/тезис страницы
-[ОГРАНИЧЕНИЕ] Не интерпретируй. Извлекай ВСЕ элементы, ничего не пропускай.
-
-Формат: JSON
-{
-  "sets": [
-    {"name": "string", "elements": ["elem1", "elem2", ...], "metrics": {"key": "value"}}
-  ],
-  "intersections": [
-    {"sets": ["name1", "name2"], "elements": ["elem1", ...], "label": "string"}
-  ],
-  "center": {"label": "string", "elements": [], "description": "string"},
-  "page_title": "string",
-  "conclusion": "string",
-  "all_metrics": [{"label": "string", "value": "string"}],
-  "element_count": 0
-}"""
+VENN_PROMPT = load_prompt("semiotic/extractors_venn")
 
 
 def extract_venn(page: fitz.Page, dpi: int = 150) -> dict:
@@ -84,22 +60,7 @@ def extract_venn(page: fitz.Page, dpi: int = 150) -> dict:
 # Hierarchy Extractor
 # ═══════════════════════════════════════════════════════════════
 
-HIERARCHY_PROMPT = """[РОЛЬ] Экстрактор иерархической структуры
-[ПРЕДМЕТ] Страница с пирамидой / иерархией целей
-[ЗАДАЧА] Извлеки структуру как иерархию целе-средств
-[ПРАВИЛА]
-1. Перечисли ВСЕ уровни пирамиды снизу вверх
-2. Для каждого уровня — его название и смысл
-3. Извлеки связи между уровнями (как нижние служат верхним)
-4. Извлеки заголовок и вывод страницы
-[ОГРАНИЧЕНИЕ] Не интерпретируй. Извлекай ВСЕ элементы.
-
-Формат: JSON
-{
-  "levels": [{"position": 1, "label": "string", "meaning": "string"}],
-  "page_title": "string",
-  "conclusion": "string"
-}"""
+HIERARCHY_PROMPT = load_prompt("semiotic/extractors_hierarchy")
 
 
 def extract_hierarchy(page: fitz.Page, dpi: int = 150) -> dict:
@@ -121,22 +82,7 @@ def extract_hierarchy(page: fitz.Page, dpi: int = 150) -> dict:
 # Matrix Extractor
 # ═══════════════════════════════════════════════════════════════
 
-MATRIX_PROMPT = """[РОЛЬ] Экстрактор матричной структуры
-[ПРЕДМЕТ] Страница с таблицей
-[ЗАДАЧА] Извлеки структуру как матрицу перекрестной классификации
-[ПРАВИЛА]
-1. Извлеки заголовки строк и столбцов
-2. Извлеки ВСЕ ячейки с данными
-3. Извлеки заголовок и вывод страницы
-[ОГРАНИЧЕНИЕ] Не интерпретируй. Извлекай ВСЕ элементы.
-
-Формат: JSON
-{
-  "columns": ["col1", "col2", ...],
-  "rows": [{"label": "string", "cells": ["val1", "val2", ...]}],
-  "page_title": "string",
-  "conclusion": "string"
-}"""
+MATRIX_PROMPT = load_prompt("semiotic/extractors_matrix")
 
 
 def extract_matrix(page: fitz.Page, dpi: int = 150) -> dict:
@@ -158,21 +104,7 @@ def extract_matrix(page: fitz.Page, dpi: int = 150) -> dict:
 # Enumeration Extractor
 # ═══════════════════════════════════════════════════════════════
 
-ENUMERATION_PROMPT = """[РОЛЬ] Экстрактор структуры перечисления
-[ПРЕДМЕТ] Страница с маркированным/нумерованным списком
-[ЗАДАЧА] Извлеки структуру как параллельное перечисление
-[ПРАВИЛА]
-1. Извлеки заголовок списка
-2. Извлеки ВСЕ элементы списка
-3. Извлеки вывод страницы
-[ОГРАНИЧЕНИЕ] Не интерпретируй. Извлекай ВСЕ элементы.
-
-Формат: JSON
-{
-  "title": "string",
-  "items": ["item1", "item2", ...],
-  "conclusion": "string"
-}"""
+ENUMERATION_PROMPT = load_prompt("semiotic/extractors_enumeration")
 
 
 def extract_enumeration(page: fitz.Page, dpi: int = 150) -> dict:

@@ -12,30 +12,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.config import DASHSCOPE_KEY, DASHSCOPE_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.7-plus"
 MAX_WORKERS = 8
 
-REFLECTOR_PROMPT = """[РОЛЬ] Прагматический рефлектор
-[ПРЕДМЕТ] Онтологическая модель страницы документа
-[ЗАДАЧА] Синтезируй вывод для C-level руководителя
-[ПРАВИЛА]
-1. Оцени СТРАТЕГИЧЕСКУЮ ЗНАЧИМОСТЬ: почему это важно для российского бизнеса/государства?
-2. Выдели КЛЮЧЕВЫЕ РИСКИ: что может пойти не так?
-3. Выдели ВОЗМОЖНОСТИ: где окно для российских экономических операторов?
-4. Дай RECOMMENDED ACTION: одно конкретное действие для C-level
-5. Оцени УВЕРЕННОСТЬ: HIGH/MEDIUM/LOW — насколько данные поддерживают вывод
-[ОГРАНИЧЕНИЕ] Не выдумывай. Только на основе онтологической модели. Вывод — для российского C-level.
-
-Формат: JSON
-{
-  "strategic_significance": "string",
-  "risks": ["string", ...],
-  "opportunities": ["string", ...],
-  "recommended_action": "string",
-  "confidence": "HIGH|MEDIUM|LOW",
-  "urgency": "HIGH|MEDIUM|LOW"
-}"""
+REFLECTOR_PROMPT = load_prompt("semiotic/cloud_reflector")
 
 
 def _reflect_one(page_id: int, ontology: dict, domain_context: str, api_key: str) -> dict:

@@ -26,13 +26,82 @@ from src.orchestrator.doubt_gate import MetaCognitiveReflector
 from src.orchestrator.dialogue_mediator import DialogueOrchestrator
 from src.orchestrator.zone_store import ZoneStore
 from src.orchestrator.cross_page_linker import CrossPageLinker
+from src.orchestrator.perspective_shift import PerspectiveShiftAgent, PerspectiveType
+from src.orchestrator.user_position import PositionExtractor, PositionAligner, UserPosition
+from src.orchestrator.temporal_linker import TemporalLinker
+from src.orchestrator.action_loop import ActionLoop, ActionRecord
+from src.orchestrator.htr_loop import HTRLoop
+from src.orchestrator.smd_core import SMDOrchestrationCore, OrchestrationResult
 
 # Глобальные кэши (ленивая инициализация)
 _zone_store: ZoneStore | None = None
 _cross_page_linker: CrossPageLinker | None = None
 _cached_run_dir: str = ""
+_fsm_result: OrchestrationResult | None = None
 
 MODEL = "qwen3.6:35b"
+
+
+def _load_fsm_data(run_dir: str) -> dict:
+    """Загружает данные pipeline для FSM оркестрации."""
+    pipeline_data = {"pages": []}
+    
+    # Classification
+    class_path = f"{run_dir}/01_semiotic_classification.json"
+    if Path(class_path).exists():
+        with open(class_path) as f:
+            pipeline_data["classification"] = json.load(f)
+    
+    # Schemas
+    schemas_path = f"{run_dir}/03_schemas.json"
+    if Path(schemas_path).exists():
+        with open(schemas_path) as f:
+            raw = json.load(f)
+        pipeline_data["schemas"] = {int(k): v for k, v in raw.items()} if isinstance(raw, dict) else {s["page_id"]: s for s in raw}
+        pipeline_data["pages"] = list(pipeline_data["schemas"].keys())
+    
+    # Ontologies
+    ont_path = f"{run_dir}/04_ontologies.json"
+    if Path(ont_path).exists():
+        with open(ont_path) as f:
+            pipeline_data["ontologies"] = json.load(f)
+    
+    # Reflections
+    refl_path = f"{run_dir}/05_reflections.json"
+    if Path(refl_path).exists():
+        with open(refl_path) as f:
+            pipeline_data["reflections"] = json.load(f)
+    
+    return pipeline_data
+
+
+def _run_fsm_orchestration(run_dir: str) -> OrchestrationResult:
+    """Запускает FSM оркестрацию на данных pipeline."""
+    global _fsm_result, _cached_run_dir
+    
+    if _fsm_result is not None and _cached_run_dir == run_dir:
+        return _fsm_result
+    
+    print("  Запуск FSM оркестрации...")
+    pipeline_data = _load_fsm_data(run_dir)
+    
+    if not pipeline_data.get("pages"):
+        print("  ⚠️ Нет данных для FSM оркестрации")
+        return OrchestrationResult()
+    
+    # Ограничиваем до 3 страниц для производительности
+    pipeline_data["pages"] = pipeline_data["pages"][:3]
+    
+    core = SMDOrchestrationCore()
+    _fsm_result = core.orchestrate_document(pipeline_data)
+    
+    # Сохраняем результат
+    output_path = f"{run_dir}/10_fsm_orchestration.json"
+    with open(output_path, "w") as f:
+        json.dump(core.to_dict(_fsm_result), f, ensure_ascii=False, indent=2)
+    
+    print(f"  ✅ FSM оркестрация завершена: {_fsm_result.summary}")
+    return _fsm_result
 
 
 def _call_ollama(prompt: str, max_tokens: int = 2048) -> str:
@@ -237,6 +306,10 @@ def _build_context_dynamic(question: str, data: dict, run_dir: str) -> str:
                 parts.append(f"- p{e['source_page']} --[{e['relation_type']}]--> p{e['target_page']} "
                            f"({e.get('explanation', '')[:100]})")
 
+    # 7. FSM оркестрация (если есть)
+    if data.get("fsm_context"):
+        parts.append(data["fsm_context"])
+
     return "\n".join(parts)
 
 
@@ -305,7 +378,12 @@ ANSWER_PROMPT = """[РОЛЬ] C-level аналитик (AI Canvas)
 {context}"""
 
 
-def ask(question: str, run_dir: str | None = None) -> dict:
+def ask(question: str, run_dir: str | None = None, 
+        position: str | None = None,
+        perspective: str | None = None,
+        causal: bool = False,
+        feedback_id: str | None = None,
+        show_provenance: bool = False) -> dict:
     """Задаёт вопрос оркестратору и возвращает структурированный ответ."""
     if run_dir is None:
         run_dir = _find_latest_run()
@@ -316,8 +394,138 @@ def ask(question: str, run_dir: str | None = None) -> dict:
     if not data.get("recommendations") and not data.get("schemas"):
         return {"answer": "Нет данных прогона. Запустите pipeline.", "confidence": "LOW", "mode": "direct"}
 
+    # FSM оркестрация (если есть данные pipeline)
+    fsm_result = None
+    try:
+        fsm_result = _run_fsm_orchestration(run_dir)
+        if fsm_result and fsm_result.page_states:
+            # Добавляем результаты FSM в контекст
+            fsm_context = "\n\n## FSM ОРКЕСТРАЦИЯ\n"
+            for page_id, state in fsm_result.page_states.items():
+                fsm_context += f"\n### Страница {page_id}\n"
+                fsm_context += f"- Режим: {state.mode.name}\n"
+                fsm_context += f"- Качество: {state.quality_score:.2f}\n"
+                if state.final_recommendation:
+                    fsm_context += f"- Рекомендация: {state.final_recommendation.get('action', '')[:150]}\n"
+                if state.doubt_assessment:
+                    fsm_context += f"- Уверенность: {state.doubt_assessment.confidence:.2f}\n"
+                    if state.doubt_assessment.blocked:
+                        fsm_context += f"- ⚠️ Заблокировано DoubtGate\n"
+            data["fsm_context"] = fsm_context
+    except Exception as e:
+        print(f"  ⚠️ FSM оркестрация не удалась: {e}")
+
     # Строим контекст (динамический: ZoneStore + CrossPageLinker)
     context = _build_context_dynamic(question, data, run_dir)
+    
+    # Дополнительные модули
+    extra_context = []
+    module_results = {}
+
+    # Position: загрузка позиции пользователя
+    if position:
+        try:
+            aligner = PositionAligner()
+            user_pos = UserPosition.load() if Path("user_position.json").exists() else UserPosition(role=position, priorities=[], constraints=[])
+            # Проверяем alignment с контекстом
+            recs = data.get("recommendations", {}).get("top_recommendations", [])
+            if recs:
+                check_result = aligner.check(recs[0].get("action", ""), user_pos)
+                extra_context.append(f"\n## ПОЗИЦИЯ ПОЛЬЗОВАТЕЛЯ: {position}")
+                extra_context.append(f"Alignment: {check_result.get('alignment', '?')}")
+                module_results["position"] = check_result
+        except Exception as e:
+            extra_context.append(f"\n## ПОЗИЦИЯ: ошибка загрузки ({e})")
+
+    # Perspective: смена формата представления
+    if perspective:
+        try:
+            ps_agent = PerspectiveShiftAgent()
+            shift_result = ps_agent.shift(question, context[:1500])
+            extra_context.append(f"\n## ПЕРСПЕКТИВА: {perspective.upper()}")
+            extra_context.append(shift_result.shifted_view[:500])
+            module_results["perspective"] = ps_agent.to_dict(shift_result)
+        except Exception as e:
+            extra_context.append(f"\n## ПЕРСПЕКТИВА: ошибка ({e})")
+
+    # Causal: трассировка причинных цепей
+    if causal:
+        try:
+            tl = TemporalLinker()
+            edges = tl.find_relations(data.get("schemas", {}), max_pairs=10)
+            if edges:
+                extra_context.append(f"\n## ПРИЧИННЫЕ СВЯЗИ ({len(edges)} рёбер)")
+                for i, edge in enumerate(edges[:5]):
+                    extra_context.append(f"  p{edge.source_page} → p{edge.target_page}: {edge.relation_type}")
+                    if edge.explanation:
+                        extra_context.append(f"    {edge.explanation[:100]}")
+            module_results["causal"] = [e.to_dict() if hasattr(e, 'to_dict') else str(e) for e in edges]
+        except Exception as e:
+            extra_context.append(f"\n## ПРИЧИННЫЕ СВЯЗИ: ошибка ({e})")
+
+    # Feedback: обратная связь по рекомендации
+    if feedback_id:
+        try:
+            al = ActionLoop()
+            recs = data.get("recommendations", {}).get("top_recommendations", [])
+            rec = next((r for r in recs if r.get("id") == feedback_id or str(r.get("page")) == feedback_id), None)
+            if rec:
+                # Создаём запись и даём feedback
+                record = al.recommend(rec.get("action", ""), rec.get("page", 0))
+                from src.orchestrator.action_loop import ActionStatus
+                updated = al.feedback(record.action_id, ActionStatus.COMPLETED, outcome="Протестировано")
+                extra_context.append(f"\n## ОБРАТНАЯ СВЯЗЬ по рекомендации {feedback_id}")
+                extra_context.append(f"Статус: {updated.get('status', '?')}")
+                module_results["feedback"] = updated
+            else:
+                extra_context.append(f"\n## ОБРАТНАЯ СВЯЗЬ: рекомендация {feedback_id} не найдена")
+        except Exception as e:
+            extra_context.append(f"\n## ОБРАТНАЯ СВЯЗЬ: ошибка ({e})")
+
+    # Добавляем дополнительный контекст
+    if extra_context:
+        context += "\n".join(extra_context)
+
+    # Provenance: построение цепи прослеживаемости
+    provenance_data = None
+    if show_provenance:
+        try:
+            pm = ProvenanceMapper()
+            # Загружаем данные pipeline для построения provenance
+            pipeline_data = _load_fsm_data(run_dir)
+            
+            # Строим provenance chain для каждой страницы (максимум 3)
+            for page_id in list(pipeline_data.get("schemas", {}).keys())[:3]:
+                classification = pipeline_data.get("classification", {}).get(str(page_id), {})
+                schema = pipeline_data.get("schemas", {}).get(page_id, {})
+                ontology = pipeline_data.get("ontologies", {}).get(str(page_id), {})
+                reflection = pipeline_data.get("reflections", {}).get(str(page_id), {})
+                
+                if classification and schema and ontology and reflection:
+                    chain = pm.build_chain_from_pipeline(
+                        page_id=page_id,
+                        classification=classification,
+                        schema=schema,
+                        ontology=ontology,
+                        reflection=reflection,
+                    )
+                    print(f"  ✅ Provenance chain для страницы {page_id}: {len(chain.nodes)} узлов")
+            
+            provenance_data = pm.export()
+            module_results["provenance"] = provenance_data
+            
+            # Добавляем provenance в контекст для LLM
+            if provenance_data and provenance_data.get("chains"):
+                prov_context = "\n\n## PROVENANCE (прослеживаемость)\n"
+                for chain_info in provenance_data["chains"][:3]:
+                    prov_context += f"\n### Страница {chain_info['page_id']}\n"
+                    prov_context += f"Trace: {chain_info['trace']}\n"
+                    prov_context += f"Valid: {chain_info['is_valid']}\n"
+                context += prov_context
+                
+        except Exception as e:
+            print(f"  ⚠️ Provenance не удалась: {e}")
+            module_results["provenance_error"] = str(e)
 
     # Маршрутизация
     route_prompt = ROUTE_PROMPT.format(question=question, context=context[:3000])
@@ -376,6 +584,8 @@ def ask(question: str, run_dir: str | None = None) -> dict:
         "mode": answer_result.get("mode", answer_mode),
         "elapsed_s": round(elapsed, 1),
         "run_dir": run_dir,
+        "modules": module_results,  # Результаты дополнительных модулей
+        "provenance": provenance_data,  # Provenance chain (если запрошено)
     }
 
 
@@ -426,6 +636,28 @@ def format_answer(result: dict) -> str:
         for z in result["unknown_zones"]:
             lines.append(f"  • {z}")
 
+    # Modules
+    modules = result.get("modules", {})
+    if modules:
+        lines.append("\n🔧 Модули:")
+        for name, data in modules.items():
+            if isinstance(data, dict):
+                lines.append(f"  [{name}] {str(data)[:100]}")
+            elif isinstance(data, list):
+                lines.append(f"  [{name}] {len(data)} items")
+            else:
+                lines.append(f"  [{name}] {str(data)[:100]}")
+
+    # Provenance
+    provenance = result.get("provenance")
+    if provenance and provenance.get("chains"):
+        lines.append("\n🔗 Provenance (прослеживаемость):")
+        lines.append(f"  Всего цепей: {provenance['total']}, валидных: {provenance['valid']}")
+        for chain_info in provenance["chains"][:3]:
+            lines.append(f"\n  Страница {chain_info['page_id']}:")
+            lines.append(f"    Trace: {chain_info['trace']}")
+            lines.append(f"    Valid: {'✅' if chain_info['is_valid'] else '❌'}")
+
     lines.append(f"\n📁 Данные: {result['run_dir']}")
 
     return "\n".join(lines)
@@ -437,6 +669,12 @@ def main():
     parser.add_argument("question", nargs="?", help="Вопрос на естественном языке")
     parser.add_argument("--run", help="Путь к run-директории", default=None)
     parser.add_argument("--json", action="store_true", help="Вывод в JSON")
+    parser.add_argument("--position", help="Позиция пользователя (стратег, аналитик, инвестор)")
+    parser.add_argument("--perspective", choices=["executive", "technical", "risk", "opportunity"],
+                        help="Смена формата представления")
+    parser.add_argument("--causal", action="store_true", help="Трассировка причинных цепей")
+    parser.add_argument("--feedback", help="Обратная связь по рекомендации (ID рекомендации)")
+    parser.add_argument("--provenance", action="store_true", help="Показать цепь прослеживаемости")
     args = parser.parse_args()
 
     if not args.question:
@@ -452,13 +690,15 @@ def main():
                 break
             if not q:
                 continue
-            result = ask(q, args.run)
+            result = ask(q, args.run, position=args.position, perspective=args.perspective,
+                        causal=args.causal, feedback_id=args.feedback, show_provenance=args.provenance)
             if args.json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 print(format_answer(result))
     else:
-        result = ask(args.question, args.run)
+        result = ask(args.question, args.run, position=args.position, perspective=args.perspective,
+                    causal=args.causal, feedback_id=args.feedback, show_provenance=args.provenance)
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:

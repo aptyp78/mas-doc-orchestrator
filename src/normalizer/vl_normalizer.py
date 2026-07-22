@@ -17,31 +17,7 @@ from src.utils.config import OLLAMA_LOCAL_BASE
 
 VISION_MODEL = "qwen3-vl:30b"
 
-VL_PARSE_PROMPT = """[РОЛЬ] Позиция экстрактора структуры документа
-[ПРЕДМЕТ] Растровое изображение страницы PDF
-[ПРАВИЛА]
-1. Извлеки ВЕСЬ текст со страницы с координатами bounding box
-2. Определи тип каждого блока: text / image / table / header / footer
-3. Для таблиц — извлеки структуру (строки × столбцы)
-4. Выдай результат в JSON с массивом blocks
-[ОГРАНИЧЕНИЕ]
-- Не интерпретируй содержание. Только структура и текст.
-- Координаты в пикселях от левого верхнего угла.
-- Выводи строго JSON.
-
-## СХЕМА JSON
-{
-  "blocks": [
-    {
-      "type": "text|image|table|header|footer",
-      "bbox": [x, y, w, h],
-      "text": "string",
-      "confidence": "HIGH|MEDIUM|LOW"
-    }
-  ],
-  "page_classification": "text-only|image-only|mixed",
-  "language": "string"
-}"""
+VL_PARSE_PROMPT = load_prompt("normalizer/vl_parse")
 
 
 def normalize_vl(pdf_path: str, dpi: int = 150) -> dict:
@@ -140,6 +116,7 @@ def compare_normalizers(pdf_path: str) -> dict:
         dict с результатами сравнения
     """
     from src.normalizer.pdf_normalizer import normalize as pymupdf_normalize
+from src.utils.prompt_loader import load_prompt
 
     t0 = time.time()
     pymupdf_result = pymupdf_normalize(pdf_path)

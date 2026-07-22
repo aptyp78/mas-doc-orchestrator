@@ -10,12 +10,41 @@
 
 ## Текущее состояние (2026-07-18)
 
-### 4-уровневый семиотический конвейер
+### Два режима работы
+
+Система работает в двух режимах, обеспечивающих трансформацию детерминированных данных в стохастические:
+
+**Режим 1: Pipeline трансформации (roles/)**
+- Загрузка новых документов: PDF → ZoneStore
+- 7 ОРП (операционно-ролевых позиций) в `src/orchestrator/roles/`
+- `EventBusPipeline` в `roles/dispatcher.py` — оркестрация
+- Точка входа: `run_pipeline.py`
+
+**Режим 2: Интерфейс к стохастическим данным (ask_orchestrator)**
+- Быстрый поиск и LLM-инференс по загруженным данным
+- `scripts/ask_orchestrator.py` — C-level Q&A интерфейс
+- Работает с ZoneStore (эмбеддинги, графы)
+
+### Pipeline трансформации (roles/)
+
+7 ОРП обеспечивают полную трансформацию PDF в стохастическое представление:
+
+1. **Metadata Extractor** (`roles/metadata_extractor.py`) — метаданные PDF
+2. **Visual Extractor** (`roles/visual_extractor.py`) — примитивы страницы (text, image, vector)
+3. **Semantic Disambiguator** (`roles/semantic_disambiguator.py`) — разрешение аббревиатур
+4. **Style Validator** (`roles/style_validator.py`) — проверка формата
+5. **Graph Builder** (`roles/graph_builder.py`) — граф связей
+6. **Context Resolver** (`roles/context_resolver.py`) — внешний контекст
+7. **Dispatcher** (`roles/dispatcher.py`) — SLA, пороги, оркестрация
+
+### 5-уровневый конвейер обработки документов
 - L0: DeepSeek OCR2 (1-3s/стр, локальный MLX) — заменяет Tesseract + Cloud vision
 - L1: SMD-классификатор — 7 знаковых форм (discursive, topology, matrix, hierarchy, spatial, enumeration, dynamics)
 - L2: Экстракторы схем — Venn, hierarchy, matrix, enumeration, spatial, dynamics
 - L3: Онтологический маппер — entities + relations + model
 - L4: Прагматический рефлектор — C-level рекомендации
+
+**Детали:** `docs/PIPELINE.md` (полное описание конвейера)
 
 ### Оркестратор стратегического мышления (6 модулей)
 - `provenance.py` — SHA-256 цепь: PDF → форма → схема → онтология → рекомендация

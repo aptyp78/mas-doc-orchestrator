@@ -8,7 +8,52 @@
 
 **Mission:** восстановить деятельность, породившую документ — не «извлечь данные», а понять, кто, зачем и в какой оргструктуре его создал. Смысл не извлекается из текста — он находится в системе деятельности вне документа.
 
-**Методология:** СМД Г.П. Щедровицкого (Activity Theory + операционно-ролевые позиции).
+**Методология:** СМД Г.П. Щедровицкого (Activity Theory + операционно-ролевые позиции). Смысл возникает в деятельности, а не содержится в тексте. **Смысловые ходы:** трансформация смысла на каждом уровне конвейера (L0→L1→L2→L3→L4). Детали: `docs/SEMANTIC_FLOW.md`
+
+## Два режима работы
+
+Система работает в двух режимах, обеспечивающих трансформацию детерминированных данных в стохастические:
+
+### Режим 1: Pipeline трансформации (roles/)
+
+**Назначение:** Загрузка новых документов. Трансформация PDF (детерминированное) → ZoneStore (стохастическое: эмбеддинги, графы).
+
+**Компоненты:**
+- `src/orchestrator/roles/` — 7 ОРП (операционно-ролевых позиций)
+- `EventBusPipeline` в `roles/dispatcher.py` — оркестрация ОРП
+- `run_pipeline.py` — точка входа для загрузки документов
+
+**Процесс:** PDF → Metadata Extractor → Visual Extractor → Semantic Disambiguator → Style Validator → Graph Builder → Context Resolver → Dispatcher → ZoneStore
+
+**Результат:** Документ загружен в ZoneStore, готов к запросам.
+
+### Режим 2: Интерфейс к стохастическим данным (ask_orchestrator)
+
+**Назначение:** Быстрый поиск и LLM-инференс по уже загруженным данным.
+
+**Компоненты:**
+- `scripts/ask_orchestrator.py` — C-level Q&A интерфейс
+- `ZoneStore` — хранилище стохастических данных
+- `CrossPageLinker`, `DoubtGate`, `DialogueMediator` — модули анализа
+
+**Процесс:** Вопрос → ZoneStore (поиск) → CrossPageLinker (связи) → DoubtGate (confidence) → LLM (генерация) → Ответ с provenance
+
+**Результат:** Ответ на вопрос с ссылками на источники.
+
+### Соотношение режимов
+
+```
+Pipeline трансформации (roles/)
+  PDF ──→ ОРП 1..7 ──→ ZoneStore (эмбеддинги, графы)
+  Детерминированное ──→ Стохастическое
+         │
+         ▼
+Интерфейс (ask_orchestrator.py)
+  Вопрос ──→ ZoneStore ──→ LLM ──→ Ответ с provenance
+  Быстрый поиск + LLM-инференс
+```
+
+**Ключевой принцип:** Pipeline выполняется один раз при загрузке. Интерфейс работает с трансформированными данными многократно.
 
 ## Mandatory Reading
 
@@ -40,10 +85,13 @@
 └─────────────────┘   └─────────────────┘   └─────────────────┘
 
 Pipeline (semiotic/):
+  L0: OCR2 (DeepSeek-OCR2-MLX) → Markdown с координатами
   L1: classifier.py        → 7 SMD sign forms
   L2: extractors.py        → schema extraction
   L3: ontology.py          → domain ontology
   L4: reflector.py         → C-level recommendations
+  
+  **Детали:** `docs/PIPELINE.md` (5-уровневый конвейер)
 
 Orchestrator (orchestrator/):
   provenance.py            → SHA-256 traceability chain

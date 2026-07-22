@@ -9,6 +9,12 @@
 - mixed (несколько форм)
 
 Использует qwen3-vl:30b для классификации страницы.
+
+Также определяет класс по модальности (L0) для динамического порога confidence:
+- text_only: только текстовые примитивы
+- mixed_text_vector: текст + векторная графика
+- mixed_text_image: текст + растровые изображения
+- complex_diagram: сложные диаграммы (Venn, графики)
 """
 
 from __future__ import annotations
@@ -20,35 +26,89 @@ import urllib.request
 import fitz
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 VISION_MODEL = "qwen3-vl:30b"
 
-SEMIOTIC_PROMPT = """[РОЛЬ] Семиотический классификатор
-[ПРЕДМЕТ] Изображение страницы документа
-[ЗАДАЧА] Определи знаковую форму, в которой зафиксирована мысль на этой странице
-[ПРАВИЛА]
-- discursive: сплошной текст, абзацы — дискурсивно-линейная развертка смысла (аргументация, нарратив)
-- topology: круги, пересекающиеся множества, зоны интересов — топологическая схема пересекающихся пространств (конфликтный анализ, картирование)
-- matrix: строки и столбцы, ячейки — матричная структура перекрестной классификации (систематизация)
-- hierarchy: пирамида, уровни, ярусы — иерархическая структура целе-средств (стратегическое планирование)
-- spatial: географическая карта, территория — пространственно-локализующая схема (ситуационный анализ)
-- enumeration: маркированный/нумерованный список — структура параллельного перечисления
-- dynamics: график, кривая, оси координат — схема функционально-временной динамики (тренд-анализ)
-- mixed: комбинация двух и более форм
-- empty: пустая страница или только номер
-[ОГРАНИЧЕНИЕ] Только классификация формы. Не интерпретируй содержание.
+# Загружаем промпт из файла
+SEMIOTIC_PROMPT = load_prompt("semiotic/classifier")
 
-Формат: JSON
-{
-  "primary_form": "discursive|topology|matrix|hierarchy|spatial|enumeration|dynamics|mixed|empty",
-  "secondary_forms": ["..."],
-  "confidence": "HIGH|MEDIUM|LOW",
-  "rationale": "краткое обоснование"
-}"""
+
+def classify_modality(page: fitz.Page) -> dict:
+    """Определяет класс документа по модальности (L0).
+    
+    Анализирует примитивы страницы и определяет класс по модальности
+    для динамического порога confidence в DoubtGate.
+    
+    Returns:
+        dict с modality_class и статистикой примитивов
+    """
+    # Извлекаем примитивы страницы
+    text_blocks = []
+    vector_blocks = []
+    image_blocks = []
+    
+    # Текстовые блоки
+    for block in page.get_text("dict")["blocks"]:
+        if block["type"] == 0:  # text block
+            text_blocks.append(block)
+    
+    # Векторные пути (drawings)
+    for drawing in page.get_drawings():
+        items = drawing.get("items", [])
+        if items:
+            vector_blocks.append(drawing)
+    
+    # Изображения
+    for img_info in page.get_images(full=True):
+        try:
+            img_bbox = page.get_image_bbox(img_info)
+            if img_bbox:
+                image_blocks.append({
+                    "bbox": list(img_bbox),
+                    "xref": img_info[0],
+                })
+        except Exception:
+            pass
+    
+    # Определяем класс по модальности
+    has_text = len(text_blocks) > 0
+    has_vectors = len(vector_blocks) > 0
+    has_images = len(image_blocks) > 0
+    
+    # Эвристика для complex_diagram: много векторных элементов или изображений
+    is_complex_diagram = (
+        len(vector_blocks) > 10 or  # Много векторных элементов
+        len(image_blocks) > 3 or    # Много изображений
+        any(len(d.get("items", [])) > 20 for d in vector_blocks)  # Сложные drawings
+    )
+    
+    if is_complex_diagram:
+        modality_class = "complex_diagram"
+    elif has_text and has_images:
+        modality_class = "mixed_text_image"
+    elif has_text and has_vectors:
+        modality_class = "mixed_text_vector"
+    elif has_text:
+        modality_class = "text_only"
+    else:
+        modality_class = "text_only"  # Дефолт
+    
+    return {
+        "modality_class": modality_class,
+        "text_blocks": len(text_blocks),
+        "vector_blocks": len(vector_blocks),
+        "image_blocks": len(image_blocks),
+        "is_complex_diagram": is_complex_diagram,
+    }
 
 
 def classify_page(page: fitz.Page, dpi: int = 150) -> dict:
-    """Классифицирует знаковую форму страницы."""
+    """Классифицирует знаковую форму страницы и определяет класс по модальности."""
+    # L0: Класс по модальности (без LLM, быстро)
+    modality = classify_modality(page)
+    
+    # L1: Знаковая форма СМД (через VL-модель, медленно)
     pix = page.get_pixmap(dpi=dpi)
     img_b64 = base64.b64encode(pix.tobytes("png")).decode()
 
@@ -73,11 +133,30 @@ def classify_page(page: fitz.Page, dpi: int = 150) -> dict:
         json_start = result_text.find("{")
         json_end = result_text.rfind("}") + 1
         if json_start >= 0 and json_end > json_start:
-            return json.loads(result_text[json_start:json_end])
+            semiotic = json.loads(result_text[json_start:json_end])
+            # Добавляем modality_class в результат
+            semiotic["modality_class"] = modality["modality_class"]
+            semiotic["modality_stats"] = {
+                "text_blocks": modality["text_blocks"],
+                "vector_blocks": modality["vector_blocks"],
+                "image_blocks": modality["image_blocks"],
+            }
+            return semiotic
     except (json.JSONDecodeError, KeyError):
         pass
 
-    return {"primary_form": "discursive", "secondary_forms": [], "confidence": "LOW", "rationale": "parse_failed"}
+    return {
+        "primary_form": "discursive",
+        "secondary_forms": [],
+        "confidence": "LOW",
+        "rationale": "parse_failed",
+        "modality_class": modality["modality_class"],
+        "modality_stats": {
+            "text_blocks": modality["text_blocks"],
+            "vector_blocks": modality["vector_blocks"],
+            "image_blocks": modality["image_blocks"],
+        },
+    }
 
 
 def classify_document(pdf_path: str, dpi: int = 150) -> dict:

@@ -4,16 +4,24 @@ import sys
 import base64
 import fitz
 from src.orchestrator.engine import Orchestrator
+from src.ingestion.format_detector import prepare_for_pipeline
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Использование: python3 scripts/run_orchestrator.py <путь к PDF>")
+        print("Использование: python3 scripts/run_orchestrator.py <путь к файлу>")
+        print("Поддерживаемые форматы: PDF, PPTX, DOCX, PNG, JPG, HTML, MD")
         sys.exit(1)
 
-    pdf_path = sys.argv[1]
-    print(f"Загрузка: {pdf_path}")
+    input_path = sys.argv[1]
+    print(f"Входной файл: {input_path}")
 
+    # Format Detector Agent: определяем формат и конвертируем если нужно
+    print("\n[Format Detector Agent]")
+    pdf_path = prepare_for_pipeline(input_path)
+    print(f"Готов для pipeline: {pdf_path}")
+
+    print(f"\n[Orchestrator]")
     doc = fitz.open(pdf_path)
     if len(doc) == 0:
         print("Ошибка: PDF пустой")

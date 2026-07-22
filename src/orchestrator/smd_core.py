@@ -174,8 +174,11 @@ class SMDOrchestrationCore:
         print(f"  [DOUBT] p{state.page_id}: оценка уверенности...")
         t0 = time.time()
 
+        # Определяем класс документа по модальности (L0) из классификации
+        modality_class = state.classification.get("modality_class", "text_only")
+
         state.doubt_assessment = self.doubt_gate.assess(
-            state.page_id, state.ontology, state.reflection,
+            state.page_id, state.ontology, state.reflection, doc_class=modality_class,
         )
         state.elapsed_s += time.time() - t0
         return state

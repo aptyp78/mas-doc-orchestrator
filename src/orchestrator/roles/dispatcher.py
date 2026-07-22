@@ -4,6 +4,7 @@
   Стадия 1: Нормализация (L0) → Universal Representation
   Стадия 2: Доменная принадлежность (SMD) → Domain-Tagged Repr.
   Стадия 3: Анализ + Преобразование → Structured Knowledge Graph
+  Стадия 4: Семиотический анализ (L1→L2→L3→L4) → Ontology + Recommendations
 """
 
 from __future__ import annotations
@@ -13,9 +14,12 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+import fitz
+
 from src.normalizer.pdf_normalizer import normalize
 from src.orchestrator.domain_analyzer import detect_domain
 from src.orchestrator.roles import graph_builder, knowledge_gap_detector
+from src.semiotic import classifier, extractors, ontology, reflector
 from src.utils.config import OLLAMA_LOCAL_BASE
 
 ROLE = (
@@ -347,6 +351,80 @@ class Pipeline:
             edges = len(graph['graph_structure'].get('edges', []))
             print(f"    Узлов: {nodes}, связей: {edges}, conf={graph['overall_confidence']}")
 
+        # ═══════════════════════════════════════════════════════════
+        # Стадия 4: Семиотический анализ (L1→L2→L3→L4)
+        # ═══════════════════════════════════════════════════════════
+        if verbose:
+            print("\n── Стадия 4: Семиотический анализ (L1→L2→L3→L4) ──")
+
+        semiotic_results = []
+        doc = fitz.open(self.pdf_path)
+        
+        # Обрабатываем первые 3 страницы для семиотического анализа (оптимизация производительности)
+        pages_to_analyze = min(3, len(doc))
+        for page_idx in range(pages_to_analyze):
+            page_id = page_idx
+            page = doc[page_idx]
+            
+            # L1: Классификация знаковой формы
+            if verbose:
+                print(f"\n  [4a] L1: Классификация страницы {page_id}...")
+            classification = classifier.classify_page(page)
+            primary_form = classification.get("primary_form", "discursive")
+            if verbose:
+                print(f"    Форма: {primary_form}, confidence: {classification.get('confidence', '?')}")
+            
+            # L2: Извлечение схемы (в зависимости от формы)
+            if verbose:
+                print(f"  [4b] L2: Извлечение схемы ({primary_form})...")
+            schema = {}
+            if primary_form == "topology":
+                schema = extractors.extract_venn(page)
+            elif primary_form == "hierarchy":
+                schema = extractors.extract_hierarchy(page)
+            elif primary_form == "matrix":
+                schema = extractors.extract_matrix(page)
+            elif primary_form == "enumeration":
+                schema = extractors.extract_enumeration(page)
+            else:  # discursive, spatial, dynamics, mixed — используем matrix как fallback
+                schema = extractors.extract_matrix(page)
+            
+            if verbose:
+                print(f"    Схема извлечена: {len(json.dumps(schema))} chars")
+            
+            # L3: Онтологический маппинг
+            if verbose:
+                print(f"  [4c] L3: Онтологический маппинг...")
+            page_context = " ".join([
+                e.get("content", "") 
+                for e in universal.get("pages", [{}])[page_idx].get("elements", [])[:5]
+            ]) if page_idx < len(universal.get("pages", [])) else ""
+            ont = ontology.map_to_ontology(schema, page_context)
+            if verbose:
+                print(f"    Сущностей: {len(ont.get('entities', []))}, связей: {len(ont.get('relations', []))}")
+            
+            # L4: Прагматический рефлектор
+            if verbose:
+                print(f"  [4d] L4: Прагматический рефлектор...")
+            domain_context = domain_info.get("primary_domain", "")
+            rec = reflector.reflect(ont, domain_context)
+            if verbose:
+                print(f"    Рекомендация: {rec.get('recommended_action', '')[:80]}...")
+                print(f"    Уверенность: {rec.get('confidence', '?')}, Срочность: {rec.get('urgency', '?')}")
+            
+            semiotic_results.append({
+                "page_id": page_id,
+                "classification": classification,
+                "schema": schema,
+                "ontology": ont,
+                "recommendation": rec,
+            })
+        
+        doc.close()
+        self.history.append({"role": "semiotic_pipeline", "output": semiotic_results})
+        if verbose:
+            print(f"\n  Семиотический анализ завершён: {len(semiotic_results)} страниц")
+
         # Dispatcher — решение
         if verbose:
             print("\n  [3f] Dispatcher...")
@@ -384,6 +462,7 @@ class Pipeline:
             "context_resolver": ctx,
             "style": style,
             "graph": graph,
+            "semiotic": semiotic_results,
             "dispatch": dispatch,
             "history": self.history,
             "elapsed_s": round(self._elapsed(), 1),

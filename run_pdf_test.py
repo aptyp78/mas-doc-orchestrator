@@ -8,21 +8,29 @@ import base64
 sys.path.insert(0, os.getcwd())
 
 import fitz
+from src.ingestion.format_detector import prepare_for_pipeline
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 run_pdf_test.py <pdf_path>")
+        print("Usage: python3 run_pdf_test.py <file_path>")
+        print("Supported formats: PDF, PPTX, DOCX, PNG, JPG, HTML, MD")
         sys.exit(1)
 
-    pdf_path = sys.argv[1]
+    input_path = sys.argv[1]
 
     # Use relative path from project root
-    if not os.path.isabs(pdf_path):
-        pdf_path = os.path.join(os.getcwd(), pdf_path)
+    if not os.path.isabs(input_path):
+        input_path = os.path.join(os.getcwd(), input_path)
 
-    print(f"Loading: {pdf_path}")
+    print(f"Input file: {input_path}")
 
+    # Format Detector Agent: определяем формат и конвертируем если нужно
+    print("\n[Format Detector Agent]")
+    pdf_path = prepare_for_pipeline(input_path)
+    print(f"Ready for pipeline: {pdf_path}")
+
+    print(f"\n[PDF Test]")
     doc = fitz.open(pdf_path)
     if len(doc) == 0:
         print("Error: PDF empty")

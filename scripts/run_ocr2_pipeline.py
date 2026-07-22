@@ -306,6 +306,18 @@ def run_ocr2_pipeline(pdf_path: str, output_dir: str | None = None, dpi: int = 2
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 scripts/run_ocr2_pipeline.py <pdf> [output_dir]")
+        print("Usage: python3 scripts/run_ocr2_pipeline.py <file> [output_dir]")
+        print("Supported formats: PDF, PPTX, DOCX, PNG, JPG, HTML, MD")
         sys.exit(1)
-    run_ocr2_pipeline(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
+    
+    input_path = sys.argv[1]
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    # Format Detector Agent: определяем формат и конвертируем если нужно
+    print("\n[Format Detector Agent]")
+    from src.ingestion.format_detector import prepare_for_pipeline
+    pdf_path = prepare_for_pipeline(input_path)
+    print(f"Ready for pipeline: {pdf_path}")
+    
+    print(f"\n[OCR2 Pipeline]")
+    run_ocr2_pipeline(pdf_path, output_dir)

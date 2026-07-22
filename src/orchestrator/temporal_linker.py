@@ -19,6 +19,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from src.utils.config import OLLAMA_LOCAL_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.6:35b"
 
@@ -61,53 +62,9 @@ def _parse_json(text: str) -> dict:
 class TemporalLinker:
     """Находит причинно-следственные и временные связи между зонами."""
 
-    PAIR_PROMPT = """[РОЛЬ] Аналитик временных и причинных связей
-[ПРЕДМЕТ] Две зоны документа
-[ЗАДАЧА] Определи, есть ли между ними временная или причинная связь
-[ПРАВИЛА]
-1. PRECEDES: зона A логически или хронологически предшествует зоне B
-2. CAUSES: содержание зоны A является причиной содержания зоны B
-3. ENABLES: зона A создаёт необходимые условия для зоны B
-4. BLOCKS: зона A описывает препятствие для реализации зоны B
-5. Если связи нет — "none"
-6. Оцени strength: 0.0-1.0
-[ОГРАНИЧЕНИЕ] Только если связь действительно прослеживается в содержании.
+    PAIR_PROMPT = load_prompt("orchestrator/temporal_linker_pair")
 
-Формат: JSON
-{{
-  "relation_type": "PRECEDES|CAUSES|ENABLES|BLOCKS|none",
-  "strength": 0.0-1.0,
-  "explanation": "string",
-  "evidence": "string — цитата из контекста"
-}}
-
-## ЗОНА A (стр. {page_a})
-{content_a}
-
-## ЗОНА B (стр. {page_b})
-{content_b}"""
-
-    CHAIN_PROMPT = """[РОЛЬ] Аналитик причинных цепей
-[ПРЕДМЕТ] Граф временных связей документа
-[ЗАДАЧА] Выяви ключевые причинные цепи
-[ПРАВИЛА]
-1. Найди цепи длиной ≥2: A → B → C
-2. Определи критические узлы (точки невозврата)
-3. Определи ускорители (что можно форсировать)
-4. Определи блокираторы (что останавливает цепь)
-[ОГРАНИЧЕНИЕ] Только на основе предоставленных рёбер.
-
-Формат: JSON
-{{
-  "chains": [
-    {{"path": [N, M, ...], "description": "string", "critical_node": N}}
-  ],
-  "accelerators": [{{"page": N, "description": "string"}}],
-  "blockers": [{{"page": N, "description": "string"}}]
-}}
-
-## РЁБРА
-{edges}"""
+    CHAIN_PROMPT = load_prompt("orchestrator/temporal_linker_chain")
 
     def __init__(self):
         self.edges: list[TemporalEdge] = []

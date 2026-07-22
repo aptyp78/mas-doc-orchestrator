@@ -12,6 +12,7 @@ from src.agents.ollama_local import ollama_chat, ollama_vision
 from src.orchestrator.meta_reflector import MetaReflector, meta_reflect_cycle
 from src.orchestrator.roles.dispatcher import Pipeline  # noqa: F401 — новый ролевой пайплайн
 from src.utils.config import AGENT_VISION_MODEL, CONFIDENCE_THRESHOLD, MAX_REFLECTION_ITERATIONS, REFLECTOR_MODEL
+from src.utils.prompt_loader import load_prompt
 
 
 def _select_agent_vision(model: str):
@@ -28,42 +29,11 @@ def _select_reflector(model: str):
     return ollama_chat  # fallback to local Ollama
 
 
-AGENT_PROMPT = """Ты — агент структурного анализа диаграмм. Проанализируй изображение как граф знаний.
+AGENT_PROMPT = load_prompt("engine/agent")
 
-1. ОПИШИ ВСЕ БЛОКИ: для каждого — ID, текст, приблизительное положение (верх/низ/лево/право/центр)
-2. ОПИШИ ВСЕ СВЯЗИ: стрелки, линии, группировки — откуда→куда, тип
-3. ОПИШИ ИЕРАРХИЮ: какие блоки вложены в другие, какие сгруппированы
-4. ОЦЕНИ СВОЮ УВЕРЕННОСТЬ: confidence 0.0-1.0 для каждого блока и связи
-5. ЧТО НЕЯСНО: перечисли, что осталось непонятным — неразборчивый текст, неясные связи
+REFLECTOR_PROMPT = load_prompt("engine/reflector")
 
-Формат: структурированный текст."""
-
-REFLECTOR_PROMPT = """Ты — рефлектор. Проверь результат анализа диаграммы.
-
-## РЕЗУЛЬТАТ АГЕНТА:
-{result}
-
-## ЗАДАЧА:
-1. ОЦЕНИ confidence всего результата (0.0-1.0) — одна цифра
-2. НАЙДИ ПРОБЕЛЫ: что пропущено? какие блоки не описаны? какие связи не учтены?
-3. НАЙДИ ПРОТИВОРЕЧИЯ: где агент мог ошибиться?
-4. СФОРМУЛИРУЙ ВОПРОСЫ для следующего прохода — конкретные, с указанием области изображения
-
-Если confidence ≥ {threshold} — напиши "ГОТОВО" и объясни почему.
-Если confidence < {threshold} — напиши "ЭСКАЛАЦИЯ" и список вопросов."""
-
-FOCUS_PROMPT = """Ты анализируешь ту же диаграмму второй раз. Рефлектор указал на проблемы в твоём предыдущем анализе.
-
-## ВОПРОСЫ РЕФЛЕКТОРА:
-{reflection}
-
-## ТВОЙ ПРЕДЫДУЩИЙ РЕЗУЛЬТАТ:
-{result}
-
-## ЗАДАЧА:
-Ответь на ВСЕ вопросы рефлектора. Если какой-то блок или связь были пропущены — добавь их.
-Если рефлектор просит уточнить область — опиши её детально.
-Выдай ПОЛНЫЙ обновлённый результат, не только ответы на вопросы."""
+FOCUS_PROMPT = load_prompt("engine/focus")
 
 
 def _extract_confidence(text: str) -> float:

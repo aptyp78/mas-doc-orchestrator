@@ -8,11 +8,13 @@
 - Verifier/Falsifier: проверяет сценарии на внутреннюю согласованность
 - LoopController: управляет итерациями до стабильности
 
-Использует локальную Ollama (qwen3.6:35b).
+Использует локальную Ollama (qwen3-coder-next для скорости, qwen3.6:35b для качества).
+Оптимизация: кэширование LLM вызовов по хэшу промпта.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import urllib.request
@@ -20,9 +22,13 @@ from dataclasses import dataclass, field
 
 from src.utils.config import OLLAMA_LOCAL_BASE
 
-MODEL = "qwen3.6:35b"
-MAX_ITERATIONS = 3
+# Оптимизация: используем быструю модель для HTR-цикла
+MODEL = "qwen3-coder-next"  # Быстрее, чем qwen3.6:35b
+MAX_ITERATIONS = 2  # Оптимизация: уменьшено с 3 до 2
 STABILITY_THRESHOLD = 0.85  # overlap между итерациями для остановки
+
+# Кэш LLM вызовов (in-memory)
+_llm_cache: dict[str, str] = {}
 
 
 @dataclass
@@ -60,7 +66,12 @@ class HTRState:
 
 
 def _call_ollama(prompt: str, max_tokens: int = 2048) -> str:
-    """Вызов локальной Ollama."""
+    """Вызов локальной Ollama с кэшированием."""
+    # Кэширование по хэшу промпта
+    cache_key = hashlib.md5(f"{prompt}:{max_tokens}".encode()).hexdigest()
+    if cache_key in _llm_cache:
+        return _llm_cache[cache_key]
+    
     data = json.dumps({
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
@@ -75,7 +86,9 @@ def _call_ollama(prompt: str, max_tokens: int = 2048) -> str:
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
-        return json.loads(resp.read())["message"]["content"]
+        result = json.loads(resp.read())["message"]["content"]
+        _llm_cache[cache_key] = result  # Сохраняем в кэш
+        return result
 
 
 def _parse_json(text: str) -> dict:

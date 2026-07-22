@@ -17,7 +17,7 @@ from pathlib import Path
 from src.utils.config import OLLAMA_LOCAL_BASE
 
 MODEL = "qwen3.6:35b"
-BATCH_SIZE = 5
+BATCH_SIZE = 1
 
 BATCH_PROMPT = """[РОЛЬ] Онтолог + Рефлектор
 [ПРЕДМЕТ] Пакет из {batch_size} схем страниц документа
@@ -152,11 +152,18 @@ def generate_ontology_reflection(run_dir: str) -> tuple[list[dict], list[dict]]:
 
         pages = result.get("pages", [])
         for p in pages:
-            all_ontologies.append({"page_id": p["page_id"], **(p.get("ontology", {}))})
-            all_reflections.append({"page_id": p["page_id"], **(p.get("reflection", {}))})
+            if not isinstance(p, dict):
+                continue
+            if "page_id" not in p:
+                continue
+            try:
+                all_ontologies.append({"page_id": p["page_id"], **(p.get("ontology", {}))})
+                all_reflections.append({"page_id": p["page_id"], **(p.get("reflection", {}))})
+            except (TypeError, AttributeError):
+                continue
 
-        n_entities = sum(len(p.get("ontology", {}).get("entities", [])) for p in pages)
-        high = sum(1 for p in pages if p.get("reflection", {}).get("urgency") == "HIGH")
+        n_entities = sum(len(p.get("ontology", {}).get("entities", [])) for p in pages if isinstance(p, dict))
+        high = sum(1 for p in pages if isinstance(p, dict) and p.get("reflection", {}).get("urgency") == "HIGH")
         print(f"  Batch {i+1}/{total_batches}: {len(pages)} pages, {n_entities} entities, {high} HIGH")
 
     all_ontologies.sort(key=lambda o: o["page_id"])

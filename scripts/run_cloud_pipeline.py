@@ -456,14 +456,22 @@ def run_full_pipeline(pdf_path: str, output_dir: str | None = None, dpi: int = 1
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Использование: python3 scripts/run_cloud_pipeline.py <путь к PDF> [output_dir]")
+        print("Использование: python3 scripts/run_cloud_pipeline.py <путь к файлу> [output_dir]")
+        print("Поддерживаемые форматы: PDF, PPTX, DOCX, PNG, JPG, HTML, MD")
         sys.exit(1)
 
-    pdf_path = sys.argv[1]
+    input_path = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else None
 
-    if not os.path.exists(pdf_path):
-        print(f"Файл не найден: {pdf_path}")
+    if not os.path.exists(input_path):
+        print(f"Файл не найден: {input_path}")
         sys.exit(1)
 
+    # Format Detector Agent: определяем формат и конвертируем если нужно
+    print("\n[Format Detector Agent]")
+    from src.ingestion.format_detector import prepare_for_pipeline
+    pdf_path = prepare_for_pipeline(input_path)
+    print(f"Готов для pipeline: {pdf_path}")
+
+    print(f"\n[Cloud Pipeline]")
     run_full_pipeline(pdf_path, output_dir)

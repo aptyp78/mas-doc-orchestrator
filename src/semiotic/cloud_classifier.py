@@ -15,32 +15,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import fitz
 
 from src.utils.config import DASHSCOPE_KEY, DASHSCOPE_BASE
+from src.utils.prompt_loader import load_prompt
 
 VISION_MODEL = "qwen3-vl-plus"
 MAX_WORKERS = 6
 
-SEMIOTIC_PROMPT = """[РОЛЬ] Семиотический классификатор
-[ПРЕДМЕТ] Изображение страницы документа
-[ЗАДАЧА] Определи знаковую форму, в которой зафиксирована мысль на этой странице
-[ПРАВИЛА]
-- discursive: сплошной текст, абзацы — дискурсивно-линейная развертка смысла (аргументация, нарратив)
-- topology: круги, пересекающиеся множества, зоны интересов — топологическая схема пересекающихся пространств (конфликтный анализ, картирование)
-- matrix: строки и столбцы, ячейки — матричная структура перекрестной классификации (систематизация)
-- hierarchy: пирамида, уровни, ярусы — иерархическая структура целе-средств (стратегическое планирование)
-- spatial: географическая карта, территория — пространственно-локализующая схема (ситуационный анализ)
-- enumeration: маркированный/нумерованный список — структура параллельного перечисления
-- dynamics: график, кривая, оси координат — схема функционально-временной динамики (тренд-анализ)
-- mixed: комбинация двух и более форм
-- empty: пустая страница или только номер
-[ОГРАНИЧЕНИЕ] Только классификация формы. Не интерпретируй содержание.
-
-Формат: JSON
-{
-  "primary_form": "discursive|topology|matrix|hierarchy|spatial|enumeration|dynamics|mixed|empty",
-  "secondary_forms": ["..."],
-  "confidence": "HIGH|MEDIUM|LOW",
-  "rationale": "краткое обоснование"
-}"""
+SEMIOTIC_PROMPT = load_prompt("semiotic/cloud_classifier")
 
 
 def _classify_one(page_num: int, img_b64: str, api_key: str) -> dict:

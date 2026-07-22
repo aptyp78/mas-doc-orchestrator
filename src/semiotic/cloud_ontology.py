@@ -12,40 +12,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.config import DASHSCOPE_KEY, DASHSCOPE_BASE
+from src.utils.prompt_loader import load_prompt
 
 MODEL = "qwen3.7-plus"
 MAX_WORKERS = 8
 
-ONTOLOGY_PROMPT = """[РОЛЬ] Онтологический маппер
-[ПРЕДМЕТ] Схема, извлечённая со страницы документа
-[ЗАДАЧА] Привяжи элементы схемы к предметной онтологии
-[ПРАВИЛА]
-1. Для каждого элемента схемы определи его онтологический тип:
-   - Геополитический актор (государство, блок стран)
-   - Критический минерал / Ресурс
-   - Мера зависимости (%, доля, объём)
-   - Стратегия / Политика
-   - Инструмент контроля (логистика, переработка, финансы)
-   - Регион / Страна-источник
-2. Для каждой связи определи тип отношения:
-   - КОНКУРИРУЕТ_ЗА
-   - КОНТРОЛИРУЕТ
-   - ЗАВИСИТ_ОТ
-   - ИНВЕСТИРУЕТ_В
-   - ДОМИНИРУЕТ_В
-3. Синтезируй онтологическую модель: кто, на что, через что, с каким результатом
-[ОГРАНИЧЕНИЕ] Не выдумывай данные. Только то, что есть в схеме.
-
-Формат: JSON
-{
-  "entities": [
-    {"name": "string", "type": "string", "role": "string", "evidence": "string"}
-  ],
-  "relations": [
-    {"from": "string", "to": "string", "type": "string", "evidence": "string"}
-  ],
-  "model": "string — краткая онтологическая модель страницы"
-}"""
+ONTOLOGY_PROMPT = load_prompt("semiotic/cloud_ontology")
 
 
 def _map_one(page_id: int, schema: dict, page_context: str, api_key: str) -> dict:
