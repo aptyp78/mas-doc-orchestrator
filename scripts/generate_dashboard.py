@@ -236,7 +236,7 @@ def generate_html(run_dir: str) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Canvas — Дашборд: ИАфр РАН ({total} стр.)</title>
+<title>AI Canvas — Дашборд документа ({total} стр.)</title>
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; display:flex; height:100vh; }}
@@ -290,7 +290,7 @@ h2 {{ font-size:14px; color:#94a3b8; margin-bottom:16px; }}
 <div class="detail-panel" id="detail"></div>
 
 <div class="panel left">
-    <h1>📊 ИАфр РАН — Стратегия продвижения деловых интересов</h1>
+    <h1>📊 Вычислительный граф документа</h1>
     <h2>{total} страниц → полный вычислительный граф</h2>
 
     <div class="stats">
@@ -412,7 +412,7 @@ async function ask() {
 
     const graphContext = JSON.stringify(DATA, null, 2);
     const prompt = `[РОЛЬ] Аналитик графа знаний
-[ПРЕДМЕТ] Документ «Стратегия ИАфр РАН» — """ + str(total) + """ страниц
+[ПРЕДМЕТ] Документ — """ + str(total) + """ страниц
 [ПРАВИЛА] Отвечай ТОЛЬКО на основе данных графа. Если данных недостаточно — честно скажи.
 [ОГРАНИЧЕНИЕ] Не выдумывай. Только граф.
 

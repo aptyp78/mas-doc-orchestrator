@@ -44,7 +44,7 @@ def classify_image_block_heuristic(bbox: list[int], surrounding_text: str,
     has_numbers = bool(re.search(r'\d+[%°]|\d+\.\d+|\d{2,}', surrounding_text))
     has_keywords = any(kw in surrounding_text.lower() for kw in [
         'диаграмм', 'карт', 'схем', 'график', 'пирамид', 'иерарх',
-        'венн', 'пересечен', 'множеств', 'ресурс', 'минерал', 'золот',
+        'венн', 'пересечен', 'множеств',
         'доля', 'процент', 'объём', 'динамика', 'тренд'
     ])
 
